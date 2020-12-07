@@ -104,7 +104,7 @@ func (cm *CCCLManager) DeleteAS3Partition(partition string) {
 //Post empty AS3 declaration to remove _AS3 partition.
 func (cm *CCCLManager) postConfig(data string) {
 	httpReqBody := bytes.NewBuffer([]byte(data))
-	req, err := http.NewRequest("POST", cm.BIGIPURL+"/mgmt/shared/appsvcs/declare", httpReqBody)
+	req, err := http.NewRequest("POST", cm.BIGIPURL+"/mgmt/shared/appsvcs/declare?unsafe=true", httpReqBody)
 	if err != nil {
 		log.Errorf("[CCCL] Creating new HTTP request error: %v ", err)
 		return

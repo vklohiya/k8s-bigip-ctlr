@@ -107,7 +107,7 @@ func (postMgr *PostManager) setupBIGIPRESTClient() {
 }
 
 func (postMgr *PostManager) getAS3APIURL(tenants []string) string {
-	apiURL := postMgr.BIGIPURL + "/mgmt/shared/appsvcs/declare/" + strings.Join(tenants, ",")
+	apiURL := postMgr.BIGIPURL + "/mgmt/shared/appsvcs/declare/" + strings.Join(tenants, ",") + "?unsafe=true"
 	return apiURL
 }
 
