@@ -2,7 +2,8 @@
 
 Using this integration CIS can be used to configure The F5 BIG-IP device as a load balancer for  [Nginx Ingress Controller](https://docs.nginx.com/nginx-ingress-controller/) pods.
 
-> **Feature Status**: The integration b/w CIS and Nginx Controller is available as a preview feature. It is suitable for experimenting and testing; however, it must be used with caution in production environments. Additionally, while the feature is in the preview, we might introduce some backward-incompatible changes in the next releases.
+> **Feature Status**: The integration b/w CIS and Nginx Controller is available as a preview feature. It is suitable for experimenting and testing; however, it must be used with caution in production environments. Additionally, while the feature is in the preview, we might introduce some backward-incompatible changes in the next releases. 
+*The preview of the IngressLink solution requires a dedicated Container Ingress Services today*
 
 ## IngressLink Compatibility Matrix
 Minimum version to use IngressLink:
@@ -33,7 +34,7 @@ Create IngressLink Custom Resource definition as follows:
 ### 3. Install the CIS Controller 
 
 * Refer to [CIS Installation guide](https://clouddocs.f5.com/containers/latest/userguide/cis-helm.html) to install Container Ingress Services on Kubernetes or Openshift
-* Make sure that you deployed CIS in CRD mode (use "--custom-resource-mode=true" and "--ingress-link-mode=true" in your CIS Configuration)
+* Make sure that you deployed CIS in CRD mode (use "--custom-resource-mode=true" and "--ingress-link-mode=true" in your CIS Configuration. This is specific to this preview)
 
 ### 4. Nginx-Controller Installation
 
