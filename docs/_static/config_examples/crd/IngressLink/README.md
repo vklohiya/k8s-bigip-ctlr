@@ -2,8 +2,7 @@
 
 Using this integration CIS can be used to configure The F5 BIG-IP device as a load balancer for  [Nginx Ingress Controller](https://docs.nginx.com/nginx-ingress-controller/) pods.
 
-> **Feature Status**: The integration b/w CIS and Nginx Controller is available as a preview feature. It is suitable for experimenting and testing; however, it must be used with caution in production environments. Additionally, while the feature is in the preview, we might introduce some backward-incompatible changes in the next releases. 
-*The preview of the IngressLink solution requires a dedicated Container Ingress Services today*
+> **Feature Status**: The integration b/w CIS and Nginx Controller is available as a preview feature. It is suitable for experimenting and testing; however, it must be used with caution in production environments. Additionally, while the feature is in the preview, we might introduce some backward-incompatible changes in the next releases.*The preview of the IngressLink solution requires a dedicated Container Ingress Services instance*
 
 ## IngressLink Compatibility Matrix
 Minimum version to use IngressLink:
