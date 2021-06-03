@@ -9,10 +9,12 @@ Added Functionality
 * Added support for networking.k8s.io/v1 ingress.
 * Added support for "virtual-server.f5.com/clientssl" annotation in ingress resource.
 * Service Type LB Enhancements:
-   - Added support for Multiport service.
+
    - Added support for HealthMonitor
 * CIS supports ConfigMap monitors services in same and different namespaces
    - Added new ConfigMap label: `hubMode:"ture"` to enable this
+
+
 
 Bug Fixes
 `````````
