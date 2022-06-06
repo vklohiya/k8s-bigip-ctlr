@@ -1513,10 +1513,18 @@ func (ctlr *Controller) updatePoolMembersForNodePort(
 		}
 
 		for _, svcPort := range poolMemInfo.portSpec {
-			if svcPort.Port == pool.ServicePort {
-				rsCfg.MetaData.Active = true
-				rsCfg.Pools[index].Members =
-					ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel)
+			if poolMemInfo.svcType == v1.ServiceTypeLoadBalancer {
+				if svcPort.TargetPort.IntVal == pool.ServicePort {
+					rsCfg.MetaData.Active = true
+					rsCfg.Pools[index].Members =
+						ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel)
+				}
+			} else {
+				if svcPort.Port == pool.ServicePort {
+					rsCfg.MetaData.Active = true
+					rsCfg.Pools[index].Members =
+						ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel)
+				}
 			}
 		}
 	}
@@ -1573,13 +1581,24 @@ func (ctlr *Controller) updatePoolMembersForNPL(
 		pods := ctlr.GetPodsForService(namespace, svcName)
 		if pods != nil {
 			for _, svcPort := range poolMemInfo.portSpec {
-				if svcPort.TargetPort.IntVal == pool.ServicePort {
-					podPort := svcPort.TargetPort.IntVal
-					rsCfg.MetaData.Active = true
-					rsCfg.Pools[index].Members =
-						ctlr.getEndpointsForNPL(podPort, pods)
+				if poolMemInfo.svcType == v1.ServiceTypeLoadBalancer {
+					if svcPort.TargetPort.IntVal == pool.ServicePort {
+						podPort := svcPort.TargetPort.IntVal
+						rsCfg.MetaData.Active = true
+						rsCfg.Pools[index].Members =
+							ctlr.getEndpointsForNPL(podPort, pods)
 
+					}
+				} else {
+					if svcPort.Port == pool.ServicePort {
+						podPort := svcPort.TargetPort.IntVal
+						rsCfg.MetaData.Active = true
+						rsCfg.Pools[index].Members =
+							ctlr.getEndpointsForNPL(podPort, pods)
+
+					}
 				}
+
 			}
 		}
 	}

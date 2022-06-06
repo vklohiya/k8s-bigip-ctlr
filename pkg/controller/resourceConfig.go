@@ -322,6 +322,35 @@ func (ctlr *Controller) deleteSvcDepResource(rsName string, rsCfg *ResourceConfi
 }
 
 // Prepares resource config based on VirtualServer resource config
+func (ctlr *Controller) fetchTargetPort(namespace, svcName string, servicePort int32) int32 {
+	var targetPort int32
+	var item interface{}
+	var found bool
+	svcKey := namespace + "/" + svcName
+	if ctlr.watchingAllNamespaces() {
+		item, found, _ = ctlr.crInformers[""].svcInformer.GetIndexer().GetByKey(svcKey)
+	} else {
+		if informer, ok := ctlr.crInformers[namespace]; ok {
+			item, found, _ = informer.svcInformer.GetIndexer().GetByKey(svcKey)
+		} else {
+			return targetPort
+		}
+
+	}
+	if !found {
+		fmt.Errorf("service '%v' not found", svcKey)
+		return targetPort
+	}
+	svc := item.(*v1.Service)
+	for _, port := range svc.Spec.Ports {
+		if port.Port == servicePort {
+			return port.TargetPort.IntVal
+		}
+	}
+	return targetPort
+}
+
+// Prepares resource config based on VirtualServer resource config
 func (ctlr *Controller) prepareRSConfigFromVirtualServer(
 	rsCfg *ResourceConfig,
 	vs *cisapiv1.VirtualServer,
@@ -337,6 +366,10 @@ func (ctlr *Controller) prepareRSConfigFromVirtualServer(
 	var poolExist bool
 	var monitors []Monitor
 	for _, pl := range vs.Spec.Pools {
+		targetPort := ctlr.fetchTargetPort(vs.Namespace, pl.Service, pl.ServicePort)
+		if targetPort == 0 {
+			targetPort = pl.ServicePort
+		}
 		pool := Pool{
 			Name: formatPoolName(
 				vs.ObjectMeta.Namespace,
@@ -346,7 +379,7 @@ func (ctlr *Controller) prepareRSConfigFromVirtualServer(
 			),
 			Partition:       rsCfg.Virtual.Partition,
 			ServiceName:     pl.Service,
-			ServicePort:     pl.ServicePort,
+			ServicePort:     targetPort,
 			NodeMemberLabel: pl.NodeMemberLabel,
 			Balance:         pl.Balance,
 		}
@@ -1331,6 +1364,10 @@ func (ctlr *Controller) prepareRSConfigFromTransportServer(
 
 	var pools Pools
 	var monitors []Monitor
+	targetPort := ctlr.fetchTargetPort(vs.Namespace, vs.Spec.Pool.Service, vs.Spec.Pool.ServicePort)
+	if targetPort == 0 {
+		targetPort = vs.Spec.Pool.ServicePort
+	}
 	pool := Pool{
 		Name: formatPoolName(
 			vs.ObjectMeta.Namespace,
@@ -1340,7 +1377,7 @@ func (ctlr *Controller) prepareRSConfigFromTransportServer(
 		),
 		Partition:       rsCfg.Virtual.Partition,
 		ServiceName:     vs.Spec.Pool.Service,
-		ServicePort:     vs.Spec.Pool.ServicePort,
+		ServicePort:     targetPort,
 		NodeMemberLabel: vs.Spec.Pool.NodeMemberLabel,
 		Balance:         vs.Spec.Pool.Balance,
 	}
@@ -1416,7 +1453,6 @@ func (ctlr *Controller) prepareRSConfigFromLBService(
 	svc *v1.Service,
 	svcPort v1.ServicePort,
 ) error {
-
 	poolName := formatPoolName(
 		svc.Namespace,
 		svc.Name,
