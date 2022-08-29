@@ -789,6 +789,8 @@ type (
 		LoadBalancingMode string               `json:"loadBalancingMode,omitempty"`
 		Members           []as3PoolMember      `json:"members,omitempty"`
 		Monitors          []as3ResourcePointer `json:"monitors,omitempty"`
+		ServiceDownAction string               `json:"serviceDownAction,omitempty"`
+		ReselectTries     int                  `json:"reselectTries,omitempty"`
 	}
 
 	// as3PoolMember maps to Pool_Member in AS3 Resources
