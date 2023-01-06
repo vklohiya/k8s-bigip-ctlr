@@ -372,10 +372,9 @@ var _ = Describe("AS3Manager Tests", func() {
 				Pools: []Pool{{Name: "test-pool", Partition: DEFAULT_PARTITION, ServiceName: "test-svc", ServicePort: 80, MonitorNames: []string{"test_monitor"}, Members: []Member{{Port: 80, Address: "192.168.1.1"}}}},
 			}
 			agentresources := &AgentResources{
-				RsMap:  ResourceConfigMap{},
-				RsCfgs: ResourceConfigs{},
+				RsMap: ResourceConfigMap{},
 			}
-			agentresources.RsCfgs = append(agentresources.RsCfgs, cfg)
+			agentresources.RsMap[NameRef{Name: "test", Partition: DEFAULT_PARTITION}] = cfg
 			mockMgr.Resources = agentresources
 			//as3ConfigMaps := []*AS3ConfigMap{{Name: "test"}}
 			//mockMgr.as3ActiveConfig = AS3Config{configmaps: as3ConfigMaps}
@@ -414,8 +413,7 @@ var _ = Describe("AS3Manager Tests", func() {
 		It("Post AS3 Declaration on event timeout", func() {
 			mockMgr.ReqChan = make(chan MessageRequest, 1)
 			agentresource := &AgentResources{
-				RsMap:  ResourceConfigMap{},
-				RsCfgs: ResourceConfigs{},
+				RsMap: ResourceConfigMap{},
 			}
 			tnt := "test"
 			mockPM := newMockPostManger()
@@ -461,8 +459,7 @@ var _ = Describe("AS3Manager Tests", func() {
 					body:   ""},
 			}, http.MethodPost)
 			agentresource := &AgentResources{
-				RsMap:  ResourceConfigMap{},
-				RsCfgs: ResourceConfigs{},
+				RsMap: ResourceConfigMap{},
 			}
 			resourceRequest := ResourceRequest{
 				PoolMembers: make(map[Member]struct{}),

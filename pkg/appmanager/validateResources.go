@@ -83,7 +83,7 @@ func (appMgr *Manager) checkValidConfigMap(
 	}
 	// This ensures that pool-only mode only logs the message below the first
 	// time we see a config.
-	rsName := FormatConfigMapVSName(cm)
+	rsName := NameRef{Name: FormatConfigMapVSName(cm), Partition: cfg.GetPartition()}
 	// Checking for annotation in VS, not iApp
 	appMgr.resources.Lock()
 	defer appMgr.resources.Unlock()
@@ -366,7 +366,14 @@ func (appMgr *Manager) checkV1beta1Ingress(
 		// Not watching this namespace
 		return false, nil
 	}
-
+	partition := DEFAULT_PARTITION
+	if p, ok := ing.ObjectMeta.Annotations[F5VsPartitionAnnotation]; ok {
+		if _, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; !ok {
+			log.Warningf("%v annotation should be provided with %v", F5VsBindAddrAnnotation, F5VsPartitionAnnotation)
+			return false, nil
+		}
+		partition = p
+	}
 	bindAddr := ""
 	if addr, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; ok {
 		bindAddr = addr
@@ -384,7 +391,7 @@ func (appMgr *Manager) checkV1beta1Ingress(
 			appMgr.vsSnatPoolName,
 		)
 		var rsType int
-		rsName := FormatIngressVSName(bindAddr, portStruct.port)
+		rsName := NameRef{Name: FormatIngressVSName(bindAddr, portStruct.port), Partition: partition}
 		// If rsCfg is nil, delete any resources tied to this Ingress
 		if rsCfg == nil {
 			if nil == ing.Spec.Rules { //single-service
@@ -475,12 +482,16 @@ func (appMgr *Manager) checkV1Beta1SingleServivceIngress(
 	ing *v1beta1.Ingress,
 ) bool {
 	bindAddr := ""
+	partition := DEFAULT_PARTITION
 	if addr, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; ok {
 		bindAddr = addr
 	}
+	if p, ok := ing.ObjectMeta.Annotations[F5VsPartitionAnnotation]; ok {
+		partition = p
+	}
 	// Depending on the Ingress, we may loop twice here, once for http and once for https
 	for _, portStruct := range appMgr.virtualPorts(ing) {
-		rsName := FormatIngressVSName(bindAddr, portStruct.port)
+		rsName := NameRef{Name: FormatIngressVSName(bindAddr, portStruct.port), Partition: partition}
 		// If we have a config for this IP:Port, and either that config or the current config
 		// is for a single service ingress, then we don't allow the new Ingress to share the VS
 		// It doesn't make sense for single service Ingresses to share a VS
