@@ -32,7 +32,12 @@ func (appMgr *Manager) checkV1Ingress(
 		// Not watching this namespace
 		return false, nil
 	}
-
+	if _, ok := ing.ObjectMeta.Annotations[F5VsPartitionAnnotation]; ok {
+		if _, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; !ok {
+			log.Warningf("%v annotation should be provided with %v", F5VsBindAddrAnnotation, F5VsPartitionAnnotation)
+			return false, nil
+		}
+	}
 	bindAddr := ""
 	if addr, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; ok {
 		bindAddr = addr
@@ -725,7 +730,7 @@ func (appMgr *Manager) createRSConfigFromV1Ingress(
 	resources.Lock()
 	defer resources.Unlock()
 	// Check to see if we already have any Ingresses for this IP:Port
-	if oldCfg, exists := resources.GetByName(cfg.Virtual.Name); exists {
+	if oldCfg, exists := resources.GetByName(cfg.GetName()); exists {
 		// If we do, use an existing config
 		cfg.CopyConfig(oldCfg)
 
@@ -811,10 +816,11 @@ func (appMgr *Manager) createRSConfigFromV1Ingress(
 	if _, ok := appMgr.resources.TranslateAddress[ing.Namespace]; !ok {
 		appMgr.resources.TranslateAddress[ing.Namespace] = make(map[string][]string)
 	}
+	name := cfg.GetName()
 	if transAdd, ok := ing.ObjectMeta.Annotations[F5VSTranslateServerAddress]; ok {
-		appMgr.resources.TranslateAddress[ing.Namespace][cfg.Virtual.Name] = append(appMgr.resources.TranslateAddress[ing.Namespace][cfg.Virtual.Name], transAdd)
+		appMgr.resources.TranslateAddress[ing.Namespace][name] = append(appMgr.resources.TranslateAddress[ing.Namespace][name], transAdd)
 	} else {
-		appMgr.resources.TranslateAddress[ing.Namespace][cfg.Virtual.Name] = append(appMgr.resources.TranslateAddress[ing.Namespace][cfg.Virtual.Name], "")
+		appMgr.resources.TranslateAddress[ing.Namespace][name] = append(appMgr.resources.TranslateAddress[ing.Namespace][name], "")
 	}
 	return &cfg, false
 }
@@ -918,10 +924,10 @@ func (appMgr *Manager) handleV1IngressTls(
 		// State 2, set HTTP redirect iRule
 		log.Debugf("[CORE] TLS: Applying HTTP redirect iRule.")
 		ruleName := fmt.Sprintf("%s_%d", HttpRedirectIRuleName, httpsPort)
-		appMgr.addIRule(ruleName, DEFAULT_PARTITION,
-			httpRedirectIRule(httpsPort, DEFAULT_PARTITION, appMgr.TeemData.Agent))
-		appMgr.addInternalDataGroup(HttpsRedirectDgName, DEFAULT_PARTITION)
-		ruleName = JoinBigipPath(DEFAULT_PARTITION, ruleName)
+		appMgr.addIRule(ruleName, rsCfg.Virtual.Partition,
+			httpRedirectIRule(httpsPort, rsCfg.Virtual.Partition, appMgr.TeemData.Agent))
+		appMgr.addInternalDataGroup(HttpsRedirectDgName, rsCfg.Virtual.Partition)
+		ruleName = JoinBigipPath(rsCfg.Virtual.Partition, ruleName)
 		rsCfg.Virtual.AddIRule(ruleName)
 		if nil != ing.Spec.DefaultBackend {
 			svcFwdRulesMap.AddEntry(ing.ObjectMeta.Namespace,
@@ -968,7 +974,6 @@ func prepareV1IngressSSLContext(appMgr *Manager, ing *netv1.Ingress) {
 }
 
 func (appMgr *Manager) handleSingleServiceV1IngressHealthMonitors(
-	rsName,
 	poolName string,
 	cfg *ResourceConfig,
 	ing *netv1.Ingress,
@@ -984,7 +989,7 @@ func (appMgr *Manager) handleSingleServiceV1IngressHealthMonitors(
 	htpMap["*"] = ruleItem
 
 	err := appMgr.assignHealthMonitorsByPathForV1Ingress(
-		rsName, ing, htpMap, monitors)
+		ing, htpMap, monitors)
 	if nil != err {
 		log.Errorf("[CORE] %s", err.Error())
 		appMgr.recordV1IngressEvent(ing, "MonitorError", err.Error())
@@ -1001,11 +1006,10 @@ func (appMgr *Manager) handleSingleServiceV1IngressHealthMonitors(
 		}
 	}
 
-	appMgr.notifyUnusedHealthMonitorRulesForV1Ingress(rsName, ing, htpMap)
+	appMgr.notifyUnusedHealthMonitorRulesForV1Ingress(ing, htpMap)
 }
 
 func (appMgr *Manager) handleMultiServiceV1IngressHealthMonitors(
-	rsName string,
 	cfg *ResourceConfig,
 	ing *netv1.Ingress,
 	monitors AnnotationHealthMonitors,
@@ -1058,7 +1062,7 @@ func (appMgr *Manager) handleMultiServiceV1IngressHealthMonitors(
 	}
 
 	err := appMgr.assignHealthMonitorsByPathForV1Ingress(
-		rsName, ing, htpMap, monitors)
+		ing, htpMap, monitors)
 	if nil != err {
 		log.Errorf("[CORE] %s", err.Error())
 		appMgr.recordV1IngressEvent(ing, "MonitorError", err.Error())
@@ -1100,11 +1104,10 @@ func (appMgr *Manager) handleMultiServiceV1IngressHealthMonitors(
 		}
 	}
 
-	appMgr.notifyUnusedHealthMonitorRulesForV1Ingress(rsName, ing, htpMap)
+	appMgr.notifyUnusedHealthMonitorRulesForV1Ingress(ing, htpMap)
 }
 
 func (appMgr *Manager) notifyUnusedHealthMonitorRulesForV1Ingress(
-	rsName string,
 	ing *netv1.Ingress,
 	htpMap HostToPathMap,
 ) {
@@ -1134,7 +1137,6 @@ func (appMgr *Manager) getProfilesFromAnnotations(profstr string, ing *netv1.Ing
 }
 
 func (appMgr *Manager) assignHealthMonitorsByPathForV1Ingress(
-	rsName string,
 	ing *netv1.Ingress, // used in Ingress case for logging events
 	rulesMap HostToPathMap,
 	monitors AnnotationHealthMonitors,

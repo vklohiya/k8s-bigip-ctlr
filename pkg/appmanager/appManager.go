@@ -626,6 +626,7 @@ type serviceQueueKey struct {
 	ResourceKind string
 	ResourceName string
 	Operation    string
+	Priority     int
 }
 
 type appInformer struct {
@@ -887,7 +888,7 @@ func (appMgr *Manager) newAppInformer(
 		appInf.ingInformer.AddEventHandlerWithResyncPeriod(
 			&cache.ResourceEventHandlerFuncs{
 				AddFunc:    func(obj interface{}) { appMgr.enqueueIngress(obj, OprTypeCreate) },
-				UpdateFunc: func(old, cur interface{}) { appMgr.enqueueIngress(cur, OprTypeUpdate) },
+				UpdateFunc: func(old, cur interface{}) { appMgr.enqueueIngressUpdate(cur, old, OprTypeUpdate) },
 				DeleteFunc: func(obj interface{}) { appMgr.enqueueIngress(obj, OprTypeDelete) },
 			},
 			resyncPeriod,
@@ -979,6 +980,18 @@ func (appMgr *Manager) enqueueSecrets(obj interface{}, operation string) {
 func (appMgr *Manager) enqueueIngress(obj interface{}, operation string) {
 	if ok, keys := appMgr.checkValidIngress(obj); ok {
 		for _, key := range keys {
+			key.Operation = operation
+			appMgr.vsQueue.Add(*key)
+		}
+	}
+}
+
+func (appMgr *Manager) enqueueIngressUpdate(cur, old interface{}, operation string) {
+	if partitionChange, ok, keys := appMgr.checkPartitionIngressUpdate(cur, old); ok {
+		for _, key := range keys {
+			if partitionChange {
+				key.Priority = 1
+			}
 			key.Operation = operation
 			appMgr.vsQueue.Add(*key)
 		}
@@ -1714,11 +1727,12 @@ func (appMgr *Manager) syncIngresses(
 	appMgr.TeemData.Lock()
 	appMgr.TeemData.ResourceType.Ingresses[sKey.Namespace] = len(ingByIndex)
 	appMgr.TeemData.Unlock()
-	svcFwdRulesMap := NewServiceFwdRuleMap()
 	for _, obj := range ingByIndex {
 		// We need to look at all ingresses in the store, parse the data blob,
 		// and process ingresses that has changed.
 		//TODO remove the switch case and checkV1beta1Ingress function
+		var partition string
+		svcFwdRulesMap := NewServiceFwdRuleMap()
 		switch obj.(type) {
 		case *v1beta1.Ingress:
 			ing := obj.(*v1beta1.Ingress)
@@ -1738,6 +1752,12 @@ func (appMgr *Manager) syncIngresses(
 			_, exists := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]
 			if !exists && appMgr.resolveIng != "" {
 				appMgr.resolveIngressHost(ing, sKey.Namespace)
+			}
+			// Get partition for ingress
+			if p, ok := ing.ObjectMeta.Annotations[F5VsPartitionAnnotation]; ok == true {
+				partition = p
+			} else {
+				partition = DEFAULT_PARTITION
 			}
 			// Get a list of dependencies removed so their pools can be removed.
 			objKey, objDeps := NewObjectDependencies(ing)
@@ -1793,11 +1813,9 @@ func (appMgr *Manager) syncIngresses(
 						if nil != ing.Spec.Backend {
 							fullPoolName := fmt.Sprintf("/%s/%s", rsCfg.Virtual.Partition,
 								FormatIngressPoolName(sKey.Namespace, sKey.ServiceName))
-							appMgr.handleSingleServiceHealthMonitors(
-								rsName, fullPoolName, rsCfg, ing, monitors)
+							appMgr.handleSingleServiceHealthMonitors(fullPoolName, rsCfg, ing, monitors)
 						} else {
-							appMgr.handleMultiServiceHealthMonitors(
-								rsName, rsCfg, ing, monitors)
+							appMgr.handleMultiServiceHealthMonitors(rsCfg, ing, monitors)
 						}
 					}
 					rsCfg.SortMonitors()
@@ -1854,6 +1872,8 @@ func (appMgr *Manager) syncIngresses(
 						}
 					}
 				}
+				// Update the rsCfg priority
+				rsCfg.MetaData.Priority = sKey.Priority
 				if ok, found, updated := appMgr.handleConfigForTypeIngress(
 					rsCfg, sKey, rsMap, rsName, svcPortMap,
 					svc, appInf, svcs, obj); !ok {
@@ -1897,6 +1917,12 @@ func (appMgr *Manager) syncIngresses(
 			_, exists := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]
 			if !exists && appMgr.resolveIng != "" {
 				appMgr.resolveV1IngressHost(ing, sKey.Namespace)
+			}
+			// Get partition for ingress
+			if p, ok := ing.ObjectMeta.Annotations[F5VsPartitionAnnotation]; ok == true {
+				partition = p
+			} else {
+				partition = DEFAULT_PARTITION
 			}
 			// Get a list of dependencies removed so their pools can be removed.
 			objKey, objDeps := NewObjectDependencies(ing)
@@ -1954,11 +1980,9 @@ func (appMgr *Manager) syncIngresses(
 							fullPoolName := fmt.Sprintf("/%s/%s", rsCfg.Virtual.Partition,
 								FormatIngressPoolName(sKey.Namespace, sKey.ServiceName))
 							RemoveUnReferredHealthMonitors(rsCfg, fullPoolName, monitors)
-							appMgr.handleSingleServiceV1IngressHealthMonitors(
-								rsName, fullPoolName, rsCfg, ing, monitors)
+							appMgr.handleSingleServiceV1IngressHealthMonitors(fullPoolName, rsCfg, ing, monitors)
 						} else {
-							appMgr.handleMultiServiceV1IngressHealthMonitors(
-								rsName, rsCfg, ing, monitors)
+							appMgr.handleMultiServiceV1IngressHealthMonitors(rsCfg, ing, monitors)
 						}
 					}
 					RemoveUnusedHealthMonitors(rsCfg)
@@ -2016,7 +2040,6 @@ func (appMgr *Manager) syncIngresses(
 						}
 					}
 				}
-
 				if ok, found, updated := appMgr.handleConfigForTypeIngress(
 					rsCfg, sKey, rsMap, rsName, svcPortMap,
 					svc, appInf, svcs, obj); !ok {
@@ -2044,19 +2067,18 @@ func (appMgr *Manager) syncIngresses(
 			appMgr.processedResources[prepareResourceKey(Ingresses, sKey.Namespace, ing.Name)] = true
 			appMgr.processedResourcesMutex.Unlock()
 		}
-
+		if len(svcFwdRulesMap) > 0 {
+			httpsRedirectDg := NameRef{
+				Name:      HttpsRedirectDgName,
+				Partition: partition,
+			}
+			if _, found := dgMap[httpsRedirectDg]; !found {
+				dgMap[httpsRedirectDg] = make(DataGroupNamespaceMap)
+			}
+			svcFwdRulesMap.AddToDataGroup(dgMap[httpsRedirectDg], partition)
+		}
 	}
 	appMgr.HandleTranslateAddress(sKey, stats)
-	if len(svcFwdRulesMap) > 0 {
-		httpsRedirectDg := NameRef{
-			Name:      HttpsRedirectDgName,
-			Partition: DEFAULT_PARTITION,
-		}
-		if _, found := dgMap[httpsRedirectDg]; !found {
-			dgMap[httpsRedirectDg] = make(DataGroupNamespaceMap)
-		}
-		svcFwdRulesMap.AddToDataGroup(dgMap[httpsRedirectDg])
-	}
 
 	return nil
 }
@@ -2209,9 +2231,7 @@ func (appMgr *Manager) syncRoutes(
 				log.Warningf("[CORE] %v", err)
 				continue
 			}
-
 			rsName := rsCfg.GetName()
-
 			// Handle Route health monitors
 			hmStr, exists := route.ObjectMeta.Annotations[HealthMonitorAnnotation]
 			if exists {
@@ -2221,7 +2241,7 @@ func (appMgr *Manager) syncRoutes(
 					log.Errorf("[CORE] Unable to parse health monitor JSON array '%v': %v",
 						hmStr, err)
 				} else {
-					appMgr.handleRouteHealthMonitors(rsName, pool, rsCfg, monitors, stats)
+					appMgr.handleRouteHealthMonitors(pool, rsCfg, monitors, stats)
 				}
 				rsCfg.SortMonitors()
 			}
@@ -2356,7 +2376,7 @@ func (appMgr *Manager) syncRoutes(
 		if _, found := dgMap[httpsRedirectDg]; !found {
 			dgMap[httpsRedirectDg] = make(DataGroupNamespaceMap)
 		}
-		svcFwdRulesMap.AddToDataGroup(dgMap[httpsRedirectDg])
+		svcFwdRulesMap.AddToDataGroup(dgMap[httpsRedirectDg], DEFAULT_PARTITION)
 	}
 
 	return nil
@@ -3076,7 +3096,7 @@ func (appMgr *Manager) deleteUnusedResources(
 	rsUpdated := 0
 	namespace := sKey.Namespace
 	svcName := sKey.ServiceName
-	for _, cfg := range appMgr.resources.GetAllResources() {
+	for _, cfg := range appMgr.resources.RsMap {
 		if cfg.MetaData.ResourceType == "configmap" ||
 			cfg.MetaData.ResourceType == "iapp" {
 			continue

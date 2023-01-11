@@ -224,7 +224,7 @@ func (appMgr *Manager) createRSConfigFromIngress(
 	resources.Lock()
 	defer resources.Unlock()
 	// Check to see if we already have any Ingresses for this IP:Port
-	if oldCfg, exists := resources.GetByName(cfg.Virtual.Name); exists {
+	if oldCfg, exists := resources.GetByName(cfg.GetName()); exists {
 		// If we do, use an existing config
 		cfg.CopyConfig(oldCfg)
 
@@ -393,10 +393,10 @@ func (appMgr *Manager) handleIngressTls(
 		// State 2, set HTTP redirect iRule
 		log.Debugf("[CORE] TLS: Applying HTTP redirect iRule.")
 		ruleName := fmt.Sprintf("%s_%d", HttpRedirectIRuleName, httpsPort)
-		appMgr.addIRule(ruleName, DEFAULT_PARTITION,
-			httpRedirectIRule(httpsPort, DEFAULT_PARTITION, appMgr.TeemData.Agent))
-		appMgr.addInternalDataGroup(HttpsRedirectDgName, DEFAULT_PARTITION)
-		ruleName = JoinBigipPath(DEFAULT_PARTITION, ruleName)
+		appMgr.addIRule(ruleName, rsCfg.Virtual.Partition,
+			httpRedirectIRule(httpsPort, rsCfg.Virtual.Partition, appMgr.TeemData.Agent))
+		appMgr.addInternalDataGroup(HttpsRedirectDgName, rsCfg.Virtual.Partition)
+		ruleName = JoinBigipPath(rsCfg.Virtual.Partition, ruleName)
 		rsCfg.Virtual.AddIRule(ruleName)
 		if nil != ing.Spec.Backend {
 			svcFwdRulesMap.AddEntry(ing.ObjectMeta.Namespace,
@@ -556,8 +556,6 @@ func (appMgr *Manager) createRSConfigFromRoute(
 		route,
 		pStruct.protocol,
 		policyName,
-		rsName,
-		pool.Name,
 		rule,
 		urlRewriteRule,
 		appRootRules,
@@ -572,8 +570,6 @@ func (appMgr *Manager) handleRouteRules(
 	route *routeapi.Route,
 	protocol string,
 	policyName string,
-	virtualName string,
-	poolName string,
 	rule *Rule,
 	urlRewriteRule *Rule,
 	appRootRules []*Rule,

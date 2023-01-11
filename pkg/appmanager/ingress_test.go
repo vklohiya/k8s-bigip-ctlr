@@ -159,7 +159,7 @@ var _ = Describe("V1 Ingress Tests", func() {
 			// This should remove the custom profile.
 			mockMgr.deleteV1Ingress(ingress)
 			resources := mockMgr.resources()
-			Expect(len(resources.GetAllResources())).To(Equal(0))
+			Expect(len(resources.RsMap)).To(Equal(0))
 			Expect(len(customProfiles)).To(Equal(0))
 		})
 

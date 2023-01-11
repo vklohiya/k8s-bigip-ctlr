@@ -344,6 +344,36 @@ func (appMgr *Manager) checkValidSecrets(
 	return false, nil
 }
 
+func (appMgr *Manager) checkPartitionIngressUpdate(
+	cur, old interface{},
+) (bool, bool, []*serviceQueueKey) {
+	//TODO remove the switch case and checkV1beta1Ingress function
+	var partitionChange bool
+	var validIngress bool
+	var keys []*serviceQueueKey
+	switch cur.(type) {
+	case *v1beta1.Ingress:
+		oldIngress := old.(*v1beta1.Ingress)
+		curIngress := cur.(*v1beta1.Ingress)
+		oldPartition, _ := oldIngress.ObjectMeta.Annotations[F5VsPartitionAnnotation]
+		newPartition, _ := curIngress.ObjectMeta.Annotations[F5VsPartitionAnnotation]
+		if oldPartition != newPartition {
+			partitionChange = true
+		}
+		validIngress, keys = appMgr.checkV1beta1Ingress(curIngress)
+	default:
+		oldIngress := old.(*netv1.Ingress)
+		curIngress := cur.(*netv1.Ingress)
+		oldPartition, _ := oldIngress.ObjectMeta.Annotations[F5VsPartitionAnnotation]
+		newPartition, _ := curIngress.ObjectMeta.Annotations[F5VsPartitionAnnotation]
+		if oldPartition != newPartition {
+			partitionChange = true
+		}
+		validIngress, keys = appMgr.checkV1Ingress(curIngress)
+	}
+	return partitionChange, validIngress, keys
+}
+
 func (appMgr *Manager) checkValidIngress(
 	obj interface{},
 ) (bool, []*serviceQueueKey) {
@@ -366,7 +396,12 @@ func (appMgr *Manager) checkV1beta1Ingress(
 		// Not watching this namespace
 		return false, nil
 	}
-
+	if _, ok := ing.ObjectMeta.Annotations[F5VsPartitionAnnotation]; ok {
+		if _, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; !ok {
+			log.Warningf("%v annotation should be provided with %v", F5VsBindAddrAnnotation, F5VsPartitionAnnotation)
+			return false, nil
+		}
+	}
 	bindAddr := ""
 	if addr, ok := ing.ObjectMeta.Annotations[F5VsBindAddrAnnotation]; ok {
 		bindAddr = addr

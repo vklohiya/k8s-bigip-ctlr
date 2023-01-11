@@ -60,7 +60,8 @@ type (
 		RouteProfs map[RouteKey]string
 		// Name of the Ingress that created this config
 		// Used to prevent single-service Ingresses from sharing virtuals
-		IngName string
+		IngName  string
+		Priority int
 	}
 
 	// Key used to store annotated profiles for a route
@@ -423,8 +424,7 @@ type (
 	}
 
 	AgentResources struct {
-		RsMap  ResourceConfigMap
-		RsCfgs ResourceConfigs
+		RsMap ResourceConfigMap
 	}
 
 	ResourceRequest struct {

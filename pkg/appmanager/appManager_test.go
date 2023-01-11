@@ -4493,73 +4493,69 @@ var _ = Describe("AppManager Tests", func() {
 				})
 			})
 
-			// Check that the provided host resolves into the expected addr.
-			// update parameter is only used to tell function to update an empty host
-			hostResolution := func(host string, expAddr, update bool) {
-				ingressConfig := v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
-						{Host: host,
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
-										{Path: "/foo",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "foo",
-												ServicePort: intstr.IntOrString{IntVal: 80},
+			It("resolves ingress host names", func() {
+				// Check that the provided host resolves into the expected addr.
+				// update parameter is only used to tell function to update an empty host
+				hostResolution := func(host string, expAddr, update bool) {
+					ingressConfig := v1beta1.IngressSpec{
+						Rules: []v1beta1.IngressRule{
+							{Host: host,
+								IngressRuleValue: v1beta1.IngressRuleValue{
+									HTTP: &v1beta1.HTTPIngressRuleValue{
+										Paths: []v1beta1.HTTPIngressPath{
+											{Path: "/foo",
+												Backend: v1beta1.IngressBackend{
+													ServiceName: "foo",
+													ServicePort: intstr.IntOrString{IntVal: 80},
+												},
+											},
+										},
+									},
+								},
+							},
+							{Host: "shouldBeIgnored",
+								IngressRuleValue: v1beta1.IngressRuleValue{
+									HTTP: &v1beta1.HTTPIngressRuleValue{
+										Paths: []v1beta1.HTTPIngressPath{
+											{Path: "/foo",
+												Backend: v1beta1.IngressBackend{
+													ServiceName: "foo",
+													ServicePort: intstr.IntOrString{IntVal: 80},
+												},
 											},
 										},
 									},
 								},
 							},
 						},
-						{Host: "shouldBeIgnored",
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
-										{Path: "/foo",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "foo",
-												ServicePort: intstr.IntOrString{IntVal: 80},
-											},
-										},
-									},
-								},
-							},
-						},
-					},
-				}
-				ingress := test.NewIngress("ingress", "1", namespace, ingressConfig,
-					map[string]string{
-						F5VsPartitionAnnotation: "velcro",
-					})
-				r := mockMgr.addIngress(ingress)
-				Expect(r).To(BeTrue(), "Ingress resource should be processed.")
+					}
+					ingress := test.NewIngress("ingress", "1", namespace, ingressConfig, map[string]string{})
+					r := mockMgr.addIngress(ingress)
+					Expect(r).To(BeTrue(), "Ingress resource should be processed.")
 
-				resources := mockMgr.resources()
-				Expect(resources.PoolCount()).To(Equal(1))
-				var bindAddr string
-				for _, cfg := range resources.GetAllResources() {
-					bindAddr = cfg.Virtual.VirtualAddress.BindAddr
-				}
-				if expAddr {
-					Expect(len(bindAddr)).To(BeNumerically(">", 0))
-				} else {
-					Expect(len(bindAddr)).To(Equal(0))
-				}
-				// Verify addition of host name works as expected
-				if update {
-					ingress.Spec.Rules[0].Host = "f5.com"
-					mockMgr.updateIngress(ingress)
+					resources := mockMgr.resources()
 					Expect(resources.PoolCount()).To(Equal(1))
-					for _, cfg := range resources.GetAllResources() {
+					var bindAddr string
+					for _, cfg := range resources.RsMap {
 						bindAddr = cfg.Virtual.VirtualAddress.BindAddr
 					}
-					Expect(len(bindAddr)).To(BeNumerically(">", 0))
+					if expAddr {
+						Expect(len(bindAddr)).To(BeNumerically(">", 0))
+					} else {
+						Expect(len(bindAddr)).To(Equal(0))
+					}
+					// Verify addition of host name works as expected
+					if update {
+						ingress.Spec.Rules[0].Host = "f5.com"
+						mockMgr.updateIngress(ingress)
+						Expect(resources.PoolCount()).To(Equal(1))
+						for _, cfg := range resources.RsMap {
+							bindAddr = cfg.Virtual.VirtualAddress.BindAddr
+						}
+						Expect(len(bindAddr)).To(BeNumerically(">", 0))
+					}
+					mockMgr.deleteIngress(ingress)
 				}
-				mockMgr.deleteIngress(ingress)
-			}
-
-			It("resolves ingress host names", func() {
 				fooSvc := test.NewService("foo", "1", namespace, "NodePort",
 					[]v1.ServicePort{{Port: 80, NodePort: 37001}})
 				r := mockMgr.addService(fooSvc)

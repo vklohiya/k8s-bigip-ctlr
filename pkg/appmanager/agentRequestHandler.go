@@ -55,7 +55,6 @@ func (appMgr *Manager) deployResource() error {
 		rsConfig.CopyConfig(value)
 		resourceConfigMap[key] = &rsConfig
 	}
-	resourceConfigs := appMgr.resources.GetAllResources()
 	appMgr.resources.Unlock()
 
 	// Prepare InternalF5ResourcesGroup Copy
@@ -71,8 +70,7 @@ func (appMgr *Manager) deployResource() error {
 	}
 	deployCfg := ResourceRequest{
 		Resources: &AgentResources{
-			RsMap:  resourceConfigMap,
-			RsCfgs: resourceConfigs,
+			RsMap: resourceConfigMap,
 		},
 		Profs:        Profs,
 		IrulesMap:    iRulesMap,

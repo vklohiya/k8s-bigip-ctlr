@@ -996,8 +996,7 @@ func (rs *Resources) PoolCount() int {
 		}
 		return append(rsPools, p)
 	}
-	cfgs := rs.GetAllResources()
-	for _, cfg := range cfgs {
+	for _, cfg := range rs.RsMap {
 		for _, pool := range cfg.Pools {
 			pools = appendPool(pools, pool)
 		}
@@ -1148,14 +1147,6 @@ func (rs *Resources) GetAllWithName(name string) (ResourceConfigs, []ServiceKey)
 		}
 	})
 	return cfgs, keys
-}
-
-func (rs *Resources) GetAllResources() ResourceConfigs {
-	var cfgs ResourceConfigs
-	for _, cfg := range rs.RsMap {
-		cfgs = append(cfgs, cfg)
-	}
-	return cfgs
 }
 
 func SetProfilesForMode(mode string, cfg *ResourceConfig) {
@@ -1676,8 +1667,10 @@ func (rc *ResourceConfig) CopyConfig(cfg *ResourceConfig) {
 	rc.Virtual.Profiles = make([]ProfileRef, len(cfg.Virtual.Profiles))
 	copy(rc.Virtual.Profiles, cfg.Virtual.Profiles)
 	// Policies ref
-	rc.Virtual.Policies = make([]NameRef, len(cfg.Virtual.Policies))
-	copy(rc.Virtual.Policies, cfg.Virtual.Policies)
+	if cfg.Virtual.Policies != nil {
+		rc.Virtual.Policies = make([]NameRef, len(cfg.Virtual.Policies))
+		copy(rc.Virtual.Policies, cfg.Virtual.Policies)
+	}
 	// IRules
 	if len(cfg.Virtual.IRules) > 0 {
 		rc.Virtual.IRules = make([]string, len(cfg.Virtual.IRules))

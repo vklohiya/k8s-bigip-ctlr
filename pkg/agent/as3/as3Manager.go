@@ -104,13 +104,12 @@ type AS3Manager struct {
 	// POSTs configuration to BIG-IP using AS3
 	PostManager *PostManager
 	// To put list of tenants in BIG-IP REST call URL that are in AS3 declaration
-	FilterTenants    bool
-	failedContext    failureContext
-	DefaultPartition string
-	ReqChan          chan MessageRequest
-	RspChan          chan interface{}
-	userAgent        string
-	l2l3Agent        L2L3Agent
+	FilterTenants bool
+	failedContext failureContext
+	ReqChan       chan MessageRequest
+	RspChan       chan interface{}
+	userAgent     string
+	l2l3Agent     L2L3Agent
 	ResourceRequest
 	ResourceResponse
 	as3Version                string
@@ -357,8 +356,8 @@ func (am *AS3Manager) postAS3Config(tempAS3Config AS3Config) (bool, string) {
 	if am.FilterTenants {
 		return am.processFilterTenants(tempAS3Config)
 	}
-
-	unifiedDecl := am.getUnifiedDeclaration(&tempAS3Config)
+	as3Obj, priorityTenants, remainingTenants := am.getVariousTenants(&tempAS3Config)
+	unifiedDecl := am.getUnifiedDeclaration(&tempAS3Config, as3Obj)
 	if unifiedDecl == "" {
 		return true, ""
 	}
@@ -371,12 +370,16 @@ func (am *AS3Manager) postAS3Config(tempAS3Config AS3Config) (bool, string) {
 			return true, ""
 		}
 	}
-
 	log.Debugf("[AS3] Posting AS3 Declaration")
-
-	am.as3ActiveConfig.updateConfig(tempAS3Config)
-
-	return am.PostManager.postConfigRequests(string(unifiedDecl), am.PostManager.getAS3APIURL(nil))
+	if len(*priorityTenants) > 0 {
+		log.Debugf("[AS3] Posting priority tenants AS3 Declaration")
+		am.PostManager.postConfigRequests(string(unifiedDecl), am.PostManager.getAS3APIURL(*priorityTenants))
+		log.Debugf("[AS3] Posting remaining tenants AS3 Declaration")
+		return am.PostManager.postConfigRequests(string(unifiedDecl), am.PostManager.getAS3APIURL(*remainingTenants))
+	} else {
+		am.as3ActiveConfig.updateConfig(tempAS3Config)
+		return am.PostManager.postConfigRequests(string(unifiedDecl), am.PostManager.getAS3APIURL(nil))
+	}
 }
 
 func (cfg *AS3Config) updateConfig(newAS3Cfg AS3Config) {
@@ -397,7 +400,7 @@ func (cfg *AS3Config) tenantIsValid(tenant string) bool {
 	return false
 }
 
-func (am *AS3Manager) getUnifiedDeclaration(cfg *AS3Config) as3Declaration {
+func (am *AS3Manager) getVariousTenants(cfg *AS3Config) (*map[string]interface{}, *[]string, *[]string) {
 	// Need to process Routes
 	var as3Obj map[string]interface{}
 
@@ -414,14 +417,26 @@ func (am *AS3Manager) getUnifiedDeclaration(cfg *AS3Config) as3Declaration {
 			adc[tenantName] = tenant
 		}
 	}
-
-	for _, tnt := range am.getDeletedTenants(adc) {
+	deletedPartition := am.getDeletedTenants(adc)
+	for _, tnt := range deletedPartition {
 		// This config deletes the partition in BIG-IP
 		adc[tnt] = as3Tenant{
 			"class": "Tenant",
 		}
 	}
+	priorityTenants := append(am.getPriorityTenant(), deletedPartition...)
+	var remainingTenant []string
+	for tenant, _ := range adc {
+		for _, priorityTenant := range priorityTenants {
+			if tenant != priorityTenant {
+				remainingTenant = append(remainingTenant, tenant)
+			}
+		}
+	}
+	return &as3Obj, &priorityTenants, &remainingTenant
+}
 
+func (am *AS3Manager) getUnifiedDeclaration(cfg *AS3Config, as3Obj *map[string]interface{}) as3Declaration {
 	unifiedDecl, err := json.Marshal(as3Obj)
 	if err != nil {
 		log.Debugf("[AS3] Unified declaration: %v\n", err)
