@@ -423,8 +423,14 @@ func (ctlr *Controller) processResources() bool {
 			}
 		}
 		if rKey.event == Delete && rKey.clusterName != "" {
-			if rsc, ok := ctlr.multiClusterResources.svcResourceMap[svcKey]; ok {
-				ctlr.deleteResourceExternalClusterSvcReference(rsc.namespace, rsc.rscName)
+			if _, ok := ctlr.multiClusterResources.clusterSvcMap[rKey.clusterName]; ok {
+				if svcPorts, ok2 := ctlr.multiClusterResources.clusterSvcMap[rKey.clusterName][svcKey]; ok2 {
+					for _, poolIds := range svcPorts {
+						for _, poolId := range poolIds {
+							ctlr.deleteResourceExternalClusterSvcReference(poolId.rsKey.namespace, poolId.rsKey.rscName)
+						}
+					}
+				}
 			}
 		}
 
@@ -1917,7 +1923,7 @@ func (ctlr *Controller) updatePoolIdentifierForService(key MultiClusterServiceKe
 	poolIds = append(poolIds, poolId)
 }
 
-func (ctlr *Controller) updatePoolMembersForService(svcKey MultiClusterServiceKey, rscDelete bool) (error, bool) {
+func (ctlr *Controller) updatePoolMembersForService(svcKey MultiClusterServiceKey, rscDelete bool) {
 	if serviceKey, ok := ctlr.multiClusterResources.clusterSvcMap[svcKey.clusterName]; ok {
 		if svcPorts, ok2 := serviceKey[svcKey]; ok2 {
 			for _, poolIds := range svcPorts {
@@ -1941,7 +1947,40 @@ func (ctlr *Controller) updatePoolMembersForService(svcKey MultiClusterServiceKe
 			}
 		}
 	}
-	return nil, false
+}
+
+func (ctlr *Controller) fetchService(svcKey MultiClusterServiceKey) (error, *v1.Service) {
+	var svc *v1.Service
+	if svcKey.clusterName == "" {
+		comInf, ok := ctlr.getNamespacedCommonInformer(svcKey.namespace)
+		if !ok {
+			return fmt.Errorf("Informer not found for service: %v", svcKey), svc
+		}
+		svcInf := comInf.svcInformer
+		item, found, _ := svcInf.GetIndexer().GetByKey(svcKey.namespace + "/" + svcKey.serviceName)
+		if !found {
+			return fmt.Errorf("service not found: %v", svcKey), svc
+		}
+		svc, _ = item.(*v1.Service)
+	} else {
+		if namespaces, ok := ctlr.multiClusterPoolInformers[svcKey.clusterName]; ok {
+			for namespace, poolInf := range namespaces {
+				if svcKey.namespace == namespace {
+					mSvcInf := poolInf.svcInformer
+					mItem, mFound, _ := mSvcInf.GetIndexer().GetByKey(svcKey.namespace + "/" + svcKey.serviceName)
+					if !mFound {
+						return fmt.Errorf("Service '%v' not found!", svcKey), svc
+					}
+					svc, _ = mItem.(*v1.Service)
+				}
+			}
+
+		}
+	}
+	if svc == nil {
+		return fmt.Errorf("Service '%v' not found!", svcKey), svc
+	}
+	return nil, svc
 }
 
 func (ctlr *Controller) updatePoolMembersForResources(pool *Pool) {
@@ -1951,20 +1990,13 @@ func (ctlr *Controller) updatePoolMembersForResources(pool *Pool) {
 		namespace:   pool.ServiceNamespace,
 		clusterName: "",
 	}
-	comInf, ok := ctlr.getNamespacedCommonInformer(svcKey.namespace)
-	if !ok {
-		log.Errorf("Informer not found for namespace: %v", svcKey.namespace)
-		return
+	err, svc := ctlr.fetchService(svcKey)
+	if err != nil {
+		log.Errorf("%v", err)
 	}
-	svcInf := comInf.svcInformer
-	item, found, _ := svcInf.GetIndexer().GetByKey(svcKey.namespace + "/" + svcKey.serviceName)
-	if !found {
-		log.Errorf("Service '%v' not found!", svcKey)
-		return
+	if svc != nil {
+		_ = ctlr.processService(svc, nil, false, "")
 	}
-	svc, _ := item.(*v1.Service)
-	_ = ctlr.processService(svc, nil, false, "")
-
 	var members []PoolMember
 	members = ctlr.getPoolMembers(svcKey, *pool)
 	if len(members) > 0 {
@@ -1973,20 +2005,20 @@ func (ctlr *Controller) updatePoolMembersForResources(pool *Pool) {
 	// For multiCluster services
 	for _, mcs := range pool.MultiClusterServices {
 		var otherMembers []PoolMember
-		if _, ok = ctlr.multiClusterPoolInformers[mcs.ClusterName]; ok {
+		if _, ok := ctlr.multiClusterPoolInformers[mcs.ClusterName]; ok {
 			mSvcKey := MultiClusterServiceKey{
 				mcs.SvcName,
 				mcs.ClusterName,
 				mcs.Namespace,
 			}
-			mSvcInf := comInf.svcInformer
-			mItem, mFound, _ := mSvcInf.GetIndexer().GetByKey(mcs.Namespace + "/" + mcs.SvcName)
-			if !mFound {
-				log.Errorf("Service '%v' not found!", svcKey)
-				return
+			err, mSvc := ctlr.fetchService(svcKey)
+			if err != nil {
+				log.Errorf("%v", err)
+				continue
 			}
-			mSvc, _ := mItem.(*v1.Service)
-			_ = ctlr.processService(mSvc, nil, false, mSvc.ClusterName)
+			if mSvc != nil {
+				_ = ctlr.processService(mSvc, nil, false, mSvc.ClusterName)
+			}
 			otherMembers = ctlr.getPoolMembers(mSvcKey, *pool)
 			if len(otherMembers) > 0 {
 				pool.Members = append(pool.Members, otherMembers...)
@@ -2014,7 +2046,7 @@ func (ctlr *Controller) getPoolMembers(mSvcKey MultiClusterServiceKey, pool Pool
 		for _, svcPort := range poolMemInfo.portSpec {
 			// if target port is a named port then we need to match it with service port name, otherwise directly match with the target port
 			if (pool.ServicePort.StrVal != "" && svcPort.Name == pool.ServicePort.StrVal) || svcPort.TargetPort == pool.ServicePort {
-				poolMembers = ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel)
+				poolMembers = ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel, mSvcKey.clusterName)
 			}
 		}
 	case Cluster:
@@ -2071,7 +2103,7 @@ func (ctlr *Controller) updatePoolMembersForNodePort(
 			if (pool.ServicePort.StrVal != "" && svcPort.Name == pool.ServicePort.StrVal) || svcPort.TargetPort == pool.ServicePort {
 				rsCfg.MetaData.Active = true
 				rsCfg.Pools[index].Members =
-					ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel)
+					ctlr.getEndpointsForNodePort(svcPort.NodePort, pool.NodeMemberLabel, "")
 			}
 		}
 		//check if endpoints are found
@@ -2158,13 +2190,13 @@ func (ctlr *Controller) updatePoolMembersForNPL(
 // getEndpointsForNodePort returns members.
 func (ctlr *Controller) getEndpointsForNodePort(
 	nodePort int32,
-	nodeMemberLabel string,
+	nodeMemberLabel, clusterName string,
 ) []PoolMember {
 	var nodes []Node
 	if nodeMemberLabel == "" {
-		nodes = ctlr.getNodesFromCache()
+		nodes = ctlr.getNodesFromCache(clusterName)
 	} else {
-		nodes = ctlr.getNodesWithLabel(nodeMemberLabel)
+		nodes = ctlr.getNodesWithLabel(nodeMemberLabel, clusterName)
 	}
 	var members []PoolMember
 	for _, v := range nodes {
@@ -2175,7 +2207,6 @@ func (ctlr *Controller) getEndpointsForNodePort(
 		}
 		members = append(members, member)
 	}
-
 	return members
 }
 
@@ -2674,7 +2705,7 @@ func (ctlr *Controller) processService(
 		memberMap: make(map[portRef][]PoolMember),
 	}
 
-	nodes := ctlr.getNodesFromCache()
+	nodes := ctlr.getNodesFromCache(svcKey.clusterName)
 	for _, subset := range eps.Subsets {
 		for _, p := range subset.Ports {
 			var members []PoolMember

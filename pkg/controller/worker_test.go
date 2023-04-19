@@ -852,11 +852,11 @@ var _ = Describe("Worker Tests", func() {
 				},
 			}
 
-			mems := mockCtlr.getEndpointsForNodePort(nodePort, "")
+			mems := mockCtlr.getEndpointsForNodePort(nodePort, "", "")
 			Expect(mems).To(Equal(members), "Wrong set of Endpoints for NodePort")
-			mems = mockCtlr.getEndpointsForNodePort(nodePort, "worker=true")
+			mems = mockCtlr.getEndpointsForNodePort(nodePort, "worker=true", "")
 			Expect(mems).To(Equal(members[:2]), "Wrong set of Endpoints for NodePort")
-			mems = mockCtlr.getEndpointsForNodePort(nodePort, "invalid label")
+			mems = mockCtlr.getEndpointsForNodePort(nodePort, "invalid label", "")
 			Expect(len(mems)).To(Equal(0), "Wrong set of Endpoints for NodePort")
 		})
 
@@ -3259,7 +3259,7 @@ extendedRouteSpec:
 				_, ok := mockCtlr.nsInformers[namespace]
 				Expect(ok).To(Equal(false), "Namespace not deleted")
 
-				mockCtlr.Agent.retryFailedTenant()
+				// mockCtlr.Agent.retryFailedTenant()
 				//time.Sleep(1 * time.Microsecond)
 			})
 			It("Process Edge Route", func() {

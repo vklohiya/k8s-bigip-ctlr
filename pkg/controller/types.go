@@ -18,6 +18,7 @@ package controller
 
 import (
 	"container/list"
+	"github.com/F5Networks/k8s-bigip-ctlr/v2/pkg/vxlan"
 	"net/http"
 	"sync"
 
@@ -63,6 +64,7 @@ type (
 		nodeLabelSelector      string
 		vxlanMode              string
 		vxlanName              string
+		vxlanMgr               *vxlan.VxlanMgr
 		initialResourceCount   int
 		resourceQueue          workqueue.RateLimitingInterface
 		Partition              string
@@ -94,7 +96,9 @@ type (
 		nrInformers               map[string]*NRInformer
 		crInformers               map[string]*CRInformer
 		nsInformers               map[string]*NSInformer
+		nodeInformer              *NodeInformer
 		multiClusterPoolInformers map[string]map[string]*MultiClusterPoolInformer
+		multiClusterNodeInformers map[string]*NodeInformer
 		routeSpecCMKey            string
 		routeLabel                string
 		namespaceLabelMode        bool
@@ -143,7 +147,6 @@ type (
 		plcInformer     cache.SharedIndexInformer
 		podInformer     cache.SharedIndexInformer
 		secretsInformer cache.SharedIndexInformer
-		nodeInformer    cache.SharedIndexInformer
 	}
 
 	// NRInformer is informer context for Native Resources of Kubernetes/Openshift
@@ -152,6 +155,13 @@ type (
 		stopCh        chan struct{}
 		routeInformer cache.SharedIndexInformer
 		cmInformer    cache.SharedIndexInformer
+	}
+
+	NodeInformer struct {
+		stopCh       chan struct{}
+		nodeInformer cache.SharedIndexInformer
+		clusterName  string
+		oldNodes     []Node
 	}
 
 	NSInformer struct {
@@ -1189,9 +1199,8 @@ type (
 	}
 
 	MultiClusterResourceStore struct {
-		rscSvcMap      map[ResourceKey]map[MultiClusterServiceKey]MultiClusterServiceConfig
-		svcResourceMap map[MultiClusterServiceKey]ResourceKey
-		clusterSvcMap  map[string]map[MultiClusterServiceKey]map[MultiClusterServiceConfig][]PoolIdentifier
+		rscSvcMap     map[ResourceKey]map[MultiClusterServiceKey]MultiClusterServiceConfig
+		clusterSvcMap map[string]map[MultiClusterServiceKey]map[MultiClusterServiceConfig][]PoolIdentifier
 		sync.Mutex
 	}
 	MultiClusterServiceKey struct {
@@ -1209,13 +1218,12 @@ type (
 	}
 
 	MultiClusterPoolInformer struct {
-		namespace    string
-		clusterName  string
-		stopCh       chan struct{}
-		svcInformer  cache.SharedIndexInformer
-		epsInformer  cache.SharedIndexInformer
-		podInformer  cache.SharedIndexInformer
-		nodeInformer cache.SharedIndexInformer
+		namespace   string
+		clusterName string
+		stopCh      chan struct{}
+		svcInformer cache.SharedIndexInformer
+		epsInformer cache.SharedIndexInformer
+		podInformer cache.SharedIndexInformer
 	}
 
 	MultiClusterServiceReference struct {

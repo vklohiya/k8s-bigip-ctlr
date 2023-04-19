@@ -46,11 +46,10 @@ func (ctlr *Controller) processResourceExternalClusterServices(namespace string,
 				ctlr.multiClusterResources.rscSvcMap[rscKey][svcKey] = MultiClusterServiceConfig{
 					svcPort: svc.ServicePort,
 				}
-				ctlr.multiClusterResources.svcResourceMap[svcKey] = rscKey
 
 				// if informer not found for cluster, setup and start informer
 				if _, found := ctlr.multiClusterPoolInformers[svc.ClusterName]; !found {
-					go ctlr.setupAndStartMultiClusterInformers(svc.ClusterName)
+					ctlr.setupAndStartMultiClusterInformers(svcKey)
 				}
 			} else {
 				log.Debugf("invalid cluster reference found cluster: %v namespace:%v, %v: %v", svc.ClusterName, namespace,
@@ -82,7 +81,6 @@ func (ctlr *Controller) deleteResourceExternalClusterSvcReference(namespace stri
 		// for service referring to resource, remove all entries
 		for svc := range svcs {
 			delete(ctlr.multiClusterResources.clusterSvcMap[svc.clusterName], svc)
-			delete(ctlr.multiClusterResources.svcResourceMap, svc)
 		}
 		//remove resource entry
 		delete(ctlr.multiClusterResources.rscSvcMap, ResourceKey{

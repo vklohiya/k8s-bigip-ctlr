@@ -50,7 +50,6 @@ func newMultiClusterResourceStore() *MultiClusterResourceStore {
 	var rs MultiClusterResourceStore
 
 	rs.rscSvcMap = make(map[ResourceKey]map[MultiClusterServiceKey]MultiClusterServiceConfig)
-	rs.svcResourceMap = make(map[MultiClusterServiceKey]ResourceKey)
 	rs.clusterSvcMap = make(map[string]map[MultiClusterServiceKey]map[MultiClusterServiceConfig][]PoolIdentifier)
 
 	return &rs
