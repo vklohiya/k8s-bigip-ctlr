@@ -1725,7 +1725,7 @@ var _ = Describe("Worker Tests", func() {
 			})
 
 			It("Virtual Server with Virtual Address", func() {
-
+				mockCtlr.Agent.bigIpServerType = BIGIP
 				crInf := mockCtlr.newNamespacedCustomResourceInformer(namespace)
 				nrInf := mockCtlr.newNamespacedNativeResourceInformer(namespace)
 				crInf.start()

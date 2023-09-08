@@ -43,7 +43,9 @@ type (
 
 func newMockController() *mockController {
 	return &mockController{
-		Controller:    &Controller{},
+		Controller: &Controller{
+			Agent: newMockAgent(nil),
+		},
 		mockResources: make(map[string][]interface{}),
 	}
 }
@@ -102,7 +104,8 @@ func (mockPM *mockPostManager) setResponses(responces []responceCtx, method stri
 
 func newMockAgent(writer writer.Writer) *Agent {
 	return &Agent{
-		PostManager:     &PostManager{postChan: make(chan ResourceConfigRequest, 1)},
+		PostManager: &PostManager{postChan: make(chan ResourceConfigRequest, 1),
+			bigIpServerType: BIGIP},
 		Partition:       "test",
 		ConfigWriter:    writer,
 		EventChan:       make(chan interface{}),

@@ -34,4 +34,8 @@ const (
 	CILIUM_K8S                      = "cilium-k8s"
 	CiliumK8sNodeSubnetAnnotation12 = "io.cilium.network.ipv4-pod-cidr"
 	CiliumK8sNodeSubnetAnnotation13 = "network.cilium.io/ipv4-pod-cidr"
+
+	// bigip-next & central manager constants
+	BIGIPNext      = "bigip-next"
+	CentralManager = "central-manager"
 )

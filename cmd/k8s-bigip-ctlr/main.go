@@ -165,7 +165,6 @@ var (
 	enableTLS                 *string
 	tls13CipherGroupReference *string
 	ciphers                   *string
-	trustedCerts              *string
 	as3PostDelay              *int
 
 	trustedCertsCfgmap     *string
@@ -201,6 +200,8 @@ var (
 	staticRoutingMode  *bool
 	orchestrationCNI   *string
 	sharedStaticRoutes *bool
+	bigIpServerType    *string
+	bigIpServerAddress *string
 	// package variables
 	isNodePort         bool
 	watchAllNamespaces bool
@@ -262,6 +263,8 @@ func _init() {
 	staticRoutingMode = globalFlags.Bool("static-routing-mode", false, "Optional, flag to enable configuration of static routes on bigip for pod network subnets")
 	orchestrationCNI = globalFlags.String("orchestration-cni", "", "Optional, flag to specify orchestration CNI configured")
 	sharedStaticRoutes = globalFlags.Bool("shared-static-routes", false, "Optional, flag to enable configuration of static routes on bigip in common partition")
+	bigIpServerType = globalFlags.String("bigip-server-type", "bigip", "Optional, flag to specify bigip server type. Valid values are bigip, bigip-next and central-manager")
+	bigIpServerAddress = globalFlags.String("bigip-server-address", "", "Optional, flag to specify the bigip next server address with central manager")
 	// Custom Resource
 	enableIPV6 = globalFlags.Bool("enable-ipv6", false,
 		"Optional, flag to enbale ipv6 network support.")
@@ -882,6 +885,8 @@ func initController(
 		CCCLGTMAgent:       *ccclGtmAgent,
 		StaticRoutingMode:  *staticRoutingMode,
 		SharedStaticRoutes: *sharedStaticRoutes,
+		BigIpServerType:    *bigIpServerType,
+		BigIpServerAddress: *bigIpServerAddress,
 		MultiClusterMode:   *multiClusterMode,
 	}
 

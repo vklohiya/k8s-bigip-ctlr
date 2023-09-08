@@ -656,7 +656,7 @@ func (agent *Agent) createAS3LTMConfigADC(config ResourceConfigRequest) as3ADC {
 		sharedApp["template"] = "shared"
 
 		// Process rscfg to create AS3 Resources
-		processResourcesForAS3(partitionConfig.ResourceMap, sharedApp, config.shareNodes, tenantName)
+		processResourcesForAS3(partitionConfig.ResourceMap, sharedApp, config.shareNodes, tenantName, agent.bigIpServerType)
 
 		// Process CustomProfiles
 		processCustomProfilesForAS3(partitionConfig.ResourceMap, sharedApp, agent.bigIPAS3Version)
@@ -669,11 +669,20 @@ func (agent *Agent) createAS3LTMConfigADC(config ResourceConfigRequest) as3ADC {
 		processDataGroupForAS3(partitionConfig.ResourceMap, sharedApp)
 
 		// Create AS3 Tenant
-		tenantDecl := as3Tenant{
-			"class":              "Tenant",
-			"defaultRouteDomain": config.defaultRouteDomain,
-			as3SharedApplication: sharedApp,
-			"label":              cisLabel,
+		var tenantDecl as3Tenant
+		if agent.bigIpServerType != BIGIP {
+			tenantDecl = as3Tenant{
+				"class":              "Tenant",
+				as3SharedApplication: sharedApp,
+				"label":              cisLabel,
+			}
+		} else {
+			tenantDecl = as3Tenant{
+				"class":              "Tenant",
+				"defaultRouteDomain": config.defaultRouteDomain,
+				as3SharedApplication: sharedApp,
+				"label":              cisLabel,
+			}
 		}
 		adc[tenantName] = tenantDecl
 	}
@@ -753,7 +762,7 @@ func processDataGroupForAS3(rsMap ResourceMap, sharedApp as3Application) {
 }
 
 // Process for AS3 Resource
-func processResourcesForAS3(rsMap ResourceMap, sharedApp as3Application, shareNodes bool, tenant string) {
+func processResourcesForAS3(rsMap ResourceMap, sharedApp as3Application, shareNodes bool, tenant string, bigIpServerType string) {
 	for _, cfg := range rsMap {
 		//Create policies
 		createPoliciesDecl(cfg, sharedApp)
@@ -767,7 +776,7 @@ func processResourcesForAS3(rsMap ResourceMap, sharedApp as3Application, shareNo
 		switch cfg.MetaData.ResourceType {
 		case VirtualServer:
 			//Create AS3 Service for virtual server
-			createServiceDecl(cfg, sharedApp, tenant)
+			createServiceDecl(cfg, sharedApp, tenant, bigIpServerType)
 		case TransportServer:
 			//Create AS3 Service for transport virtual server
 			createTransportServiceDecl(cfg, sharedApp, tenant)
@@ -888,7 +897,7 @@ func processIrulesForCRD(cfg *ResourceConfig, svc *as3Service) {
 }
 
 // Create AS3 Service for CRD
-func createServiceDecl(cfg *ResourceConfig, sharedApp as3Application, tenant string) {
+func createServiceDecl(cfg *ResourceConfig, sharedApp as3Application, tenant string, bigIpServerType string) {
 	svc := &as3Service{}
 	numPolicies := len(cfg.Virtual.Policies)
 	switch {
@@ -932,9 +941,11 @@ func createServiceDecl(cfg *ResourceConfig, sharedApp as3Application, tenant str
 
 	if cfg.Virtual.TLSTermination != TLSPassthrough {
 		svc.Layer4 = cfg.Virtual.IpProtocol
-		svc.Source = "0.0.0.0/0"
-		svc.TranslateServerAddress = true
-		svc.TranslateServerPort = true
+		if bigIpServerType == "bigip" {
+			svc.Source = "0.0.0.0/0"
+			svc.TranslateServerAddress = true
+			svc.TranslateServerPort = true
+		}
 		svc.Class = "Service_HTTP"
 	} else {
 		if len(cfg.Virtual.PersistenceProfile) == 0 {
@@ -1596,8 +1607,8 @@ func createTransportServiceDecl(cfg *ResourceConfig, sharedApp as3Application, t
 			svc.Layer4 = "tcp"
 		}
 	}
-
-	svc.ProfileL4 = "basic"
+	// commenting profile l4 basic as it's not supported
+	// svc.ProfileL4 = "basic"
 	if len(cfg.Virtual.ProfileL4) > 0 {
 		svc.ProfileL4 = &as3ResourcePointer{
 			BigIP: cfg.Virtual.ProfileL4,

@@ -737,6 +737,8 @@ type (
 		CCCLGTMAgent       bool
 		StaticRoutingMode  bool
 		SharedStaticRoutes bool
+		BigIpServerType    string
+		BigIpServerAddress string
 		MultiClusterMode   string
 	}
 
@@ -758,6 +760,8 @@ type (
 		retryTenantDeclMap map[string]*tenantParams
 		postChan           chan ResourceConfigRequest
 		retryChan          chan struct{}
+		bigIpServerType    string
+		bigIpServerAddress any
 	}
 
 	PrimaryClusterHealthProbeParams struct {
