@@ -201,6 +201,7 @@ var (
 	staticRoutingMode  *bool
 	orchestrationCNI   *string
 	sharedStaticRoutes *bool
+	bigIpNext          *bool
 	// package variables
 	isNodePort         bool
 	watchAllNamespaces bool
@@ -262,6 +263,7 @@ func _init() {
 	staticRoutingMode = globalFlags.Bool("static-routing-mode", false, "Optional, flag to enable configuration of static routes on bigip for pod network subnets")
 	orchestrationCNI = globalFlags.String("orchestration-cni", "", "Optional, flag to specify orchestration CNI configured")
 	sharedStaticRoutes = globalFlags.Bool("shared-static-routes", false, "Optional, flag to enable configuration of static routes on bigip in common partition")
+	bigIpNext = globalFlags.Bool("token-authentication", false, "Optional, flag to enable token based authentication")
 	// Custom Resource
 	enableIPV6 = globalFlags.Bool("enable-ipv6", false,
 		"Optional, flag to enbale ipv6 network support.")
@@ -882,6 +884,7 @@ func initController(
 		CCCLGTMAgent:       *ccclGtmAgent,
 		StaticRoutingMode:  *staticRoutingMode,
 		SharedStaticRoutes: *sharedStaticRoutes,
+		BigIpNext:          *bigIpNext,
 		MultiClusterMode:   *multiClusterMode,
 	}
 

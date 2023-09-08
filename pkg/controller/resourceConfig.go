@@ -724,14 +724,22 @@ func (ctlr *Controller) prepareRSConfigFromVirtualServer(
 
 	// skip the policy creation for passthrough termination
 	if !passthroughVS {
-		rules = ctlr.prepareVirtualServerRules(vs, rsCfg)
-		if rules == nil {
-			return fmt.Errorf("failed to create LTM Rules")
+		if ctlr.Agent.bigIpNext {
+			rsCfg.Virtual.PoolName = ctlr.framePoolName(
+				vs.ObjectMeta.Namespace,
+				vs.Spec.Pools[0],
+				vs.Spec.Host,
+			)
+		} else {
+			rules = ctlr.prepareVirtualServerRules(vs, rsCfg)
+			if rules == nil {
+				return fmt.Errorf("failed to create LTM Rules")
+			}
+
+			policyName := formatPolicyName(vs.Spec.Host, vs.Spec.HostGroup, rsCfg.Virtual.Name)
+
+			rsCfg.AddRuleToPolicy(policyName, vs.Namespace, rules)
 		}
-
-		policyName := formatPolicyName(vs.Spec.Host, vs.Spec.HostGroup, rsCfg.Virtual.Name)
-
-		rsCfg.AddRuleToPolicy(policyName, vs.Namespace, rules)
 	}
 
 	// Attach user specified iRules

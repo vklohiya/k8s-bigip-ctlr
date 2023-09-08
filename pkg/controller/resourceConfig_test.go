@@ -207,6 +207,7 @@ var _ = Describe("Resource Config Tests", func() {
 		//partition := "test"
 		BeforeEach(func() {
 			mockCtlr = newMockController()
+			mockCtlr.Agent = newMockAgent(nil)
 			mockCtlr.resources = NewResourceStore()
 			mockCtlr.multiClusterConfigs = clustermanager.NewMultiClusterConfig()
 			mockCtlr.mode = CustomResourceMode
@@ -1447,6 +1448,7 @@ var _ = Describe("Resource Config Tests", func() {
 
 		BeforeEach(func() {
 			mockCtlr = newMockController()
+			mockCtlr.Agent = newMockAgent(nil)
 			mockCtlr.multiClusterConfigs = clustermanager.NewMultiClusterConfig()
 			mockCtlr.resources = NewResourceStore()
 			mockCtlr.mode = CustomResourceMode
