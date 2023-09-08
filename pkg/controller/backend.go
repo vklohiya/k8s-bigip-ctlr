@@ -680,7 +680,7 @@ func (agent *Agent) createAS3LTMConfigADC(config ResourceConfigRequest) as3ADC {
 
 		// Process rscfg to create AS3 Resources
 		processResourcesForAS3(partitionConfig.ResourceMap, sharedApp, config.shareNodes, tenantName,
-			config.poolMemberType, agent.bigIPAS3Version)
+			config.poolMemberType, agent.bigIPAS3Version, agent.bigIpNext)
 
 		// Process CustomProfiles
 		processCustomProfilesForAS3(partitionConfig.ResourceMap, sharedApp, agent.bigIPAS3Version)
@@ -693,11 +693,20 @@ func (agent *Agent) createAS3LTMConfigADC(config ResourceConfigRequest) as3ADC {
 		processDataGroupForAS3(partitionConfig.ResourceMap, sharedApp)
 
 		// Create AS3 Tenant
-		tenantDecl := as3Tenant{
-			"class":              "Tenant",
-			"defaultRouteDomain": config.defaultRouteDomain,
-			as3SharedApplication: sharedApp,
-			"label":              cisLabel,
+		var tenantDecl as3Tenant
+		if agent.bigIpNext {
+			tenantDecl = as3Tenant{
+				"class":              "Tenant",
+				as3SharedApplication: sharedApp,
+				"label":              cisLabel,
+			}
+		} else {
+			tenantDecl = as3Tenant{
+				"class":              "Tenant",
+				"defaultRouteDomain": config.defaultRouteDomain,
+				as3SharedApplication: sharedApp,
+				"label":              cisLabel,
+			}
 		}
 		adc[tenantName] = tenantDecl
 	}
@@ -778,7 +787,7 @@ func processDataGroupForAS3(rsMap ResourceMap, sharedApp as3Application) {
 }
 
 // Process for AS3 Resource
-func processResourcesForAS3(rsMap ResourceMap, sharedApp as3Application, shareNodes bool, tenant, poolMemberType string, bigipAs3Version float64) {
+func processResourcesForAS3(rsMap ResourceMap, sharedApp as3Application, shareNodes bool, tenant, poolMemberType string, bigipAs3Version float64, bigIpNext bool) {
 	for _, cfg := range rsMap {
 		//Create policies
 		createPoliciesDecl(cfg, sharedApp)
@@ -792,7 +801,7 @@ func processResourcesForAS3(rsMap ResourceMap, sharedApp as3Application, shareNo
 		switch cfg.MetaData.ResourceType {
 		case VirtualServer:
 			//Create AS3 Service for virtual server
-			createServiceDecl(cfg, sharedApp, tenant, bigipAs3Version)
+			createServiceDecl(cfg, sharedApp, tenant, bigipAs3Version, bigIpNext)
 		case TransportServer:
 			//Create AS3 Service for transport virtual server
 			createTransportServiceDecl(cfg, sharedApp, tenant)
@@ -947,7 +956,7 @@ func processIrulesForCRD(cfg *ResourceConfig, svc *as3Service) {
 }
 
 // Create AS3 Service for CRD
-func createServiceDecl(cfg *ResourceConfig, sharedApp as3Application, tenant string, bigipAs3Version float64) {
+func createServiceDecl(cfg *ResourceConfig, sharedApp as3Application, tenant string, bigipAs3Version float64, bigIpNext bool) {
 	svc := &as3Service{}
 	numPolicies := len(cfg.Virtual.Policies)
 	switch {
@@ -991,9 +1000,11 @@ func createServiceDecl(cfg *ResourceConfig, sharedApp as3Application, tenant str
 
 	if cfg.Virtual.TLSTermination != TLSPassthrough {
 		svc.Layer4 = cfg.Virtual.IpProtocol
-		svc.Source = "0.0.0.0/0"
-		svc.TranslateServerAddress = true
-		svc.TranslateServerPort = true
+		if !bigIpNext {
+			svc.Source = "0.0.0.0/0"
+			svc.TranslateServerAddress = true
+			svc.TranslateServerPort = true
+		}
 		svc.Class = "Service_HTTP"
 	} else {
 		if len(cfg.Virtual.PersistenceProfile) == 0 {

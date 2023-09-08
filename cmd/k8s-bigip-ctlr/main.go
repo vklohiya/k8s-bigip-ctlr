@@ -207,6 +207,7 @@ var (
 	orchestrationCNI    *string
 	sharedStaticRoutes  *bool
 	staticRouteNodeCIDR *string
+	bigIpNext           *bool
 	// package variables
 	isNodePort         bool
 	watchAllNamespaces bool
@@ -270,6 +271,8 @@ func _init() {
 	orchestrationCNI = globalFlags.String("orchestration-cni", "", "Optional, flag to specify orchestration CNI configured")
 	sharedStaticRoutes = globalFlags.Bool("shared-static-routes", false, "Optional, flag to enable configuration of static routes on bigip in common partition")
 	staticRouteNodeCIDR = globalFlags.String("static-route-node-cidr", "", "Optional, flag to specify node network cidr to be used for static routing when node has multiple interfaces.This is supported only with CNI ovn-k8s")
+	bigIpNext = globalFlags.Bool("token-authentication", false, "Optional, flag to enable token based authentication")
+
 	// Custom Resource
 	enableIPV6 = globalFlags.Bool("enable-ipv6", false,
 		"Optional, flag to enbale ipv6 network support.")
@@ -924,6 +927,7 @@ func initController(
 		CCCLGTMAgent:       *ccclGtmAgent,
 		StaticRoutingMode:  *staticRoutingMode,
 		SharedStaticRoutes: *sharedStaticRoutes,
+		BigIpNext:          *bigIpNext,
 		MultiClusterMode:   *multiClusterMode,
 	}
 

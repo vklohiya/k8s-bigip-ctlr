@@ -286,6 +286,7 @@ var _ = Describe("Resource Config Tests", func() {
 		//partition := "test"
 		BeforeEach(func() {
 			mockCtlr = newMockController()
+			mockCtlr.Agent = newMockAgent(nil)
 			mockCtlr.resources = NewResourceStore()
 			mockCtlr.multiClusterHandler = NewClusterHandler("")
 			go mockCtlr.multiClusterHandler.ResourceEventWatcher()
@@ -1811,6 +1812,7 @@ var _ = Describe("Resource Config Tests", func() {
 
 		BeforeEach(func() {
 			mockCtlr = newMockController()
+			mockCtlr.Agent = newMockAgent(nil)
 			mockCtlr.multiClusterHandler = NewClusterHandler("")
 			go mockCtlr.multiClusterHandler.ResourceEventWatcher()
 			// Handles the resource status updates

@@ -48,6 +48,7 @@ func NewPostManager(params AgentParams, gtmPostMgr bool) *PostManager {
 		tenantPriorityMap:               make(map[string]int),
 		postChan:                        make(chan ResourceConfigRequest, 1),
 		retryChan:                       make(chan struct{}, 1),
+		bigIpNext:                       params.BigIpNext,
 	}
 	if !gtmPostMgr {
 		pm.PostParams = params.PostParams
@@ -130,8 +131,16 @@ func (postMgr *PostManager) postConfig(cfg *agentConfig) {
 		return
 	}
 	log.Debugf("[AS3]%v posting request to %v", postMgr.postManagerPrefix, cfg.as3APIURL)
-	log.Infof("%v[AS3]%v posting request to %v for %v tenants", getRequestPrefix(cfg.id), postMgr.postManagerPrefix, postMgr.BIGIPURL, getTenantsFromUri(cfg.as3APIURL))
-	req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+
+	if postMgr.bigIpNext {
+		token := postMgr.getBigipAuthToken(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+		// add authorization header to the req
+		req.Header.Add("Authorization", "Bearer "+token)
+		req.Header.Add("Content-Type", "application/json;charset=UTF-8")
+	} else {
+		log.Infof("%v[AS3]%v posting request to %v for %v tenants", getRequestPrefix(cfg.id), postMgr.postManagerPrefix, postMgr.BIGIPURL, getTenantsFromUri(cfg.as3APIURL))
+		req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	}
 
 	httpResp, responseMap := postMgr.httpPOST(req)
 	if httpResp == nil || responseMap == nil {
@@ -250,7 +259,14 @@ func (postMgr *PostManager) getTenantConfigStatus(id string) {
 		return
 	}
 	log.Debugf("[AS3]%v posting request with taskId to %v", postMgr.postManagerPrefix, postMgr.getAS3TaskIdURL(id))
-	req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	if postMgr.bigIpNext {
+		token := postMgr.getBigipAuthToken(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+		// add authorization header to the req
+		req.Header.Add("Authorization", "Bearer "+token)
+		req.Header.Add("Content-Type", "application/json;charset=UTF-8")
+	} else {
+		req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	}
 
 	httpResp, responseMap := postMgr.httpPOST(req)
 	if httpResp == nil || responseMap == nil {
@@ -441,7 +457,14 @@ func (postMgr *PostManager) GetBigipAS3Version() (string, string, string, error)
 	}
 
 	log.Debugf("[AS3]%v posting GET BIGIP AS3 Version request on %v", postMgr.postManagerPrefix, url)
-	req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	if postMgr.bigIpNext {
+		token := postMgr.getBigipAuthToken(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+		// add authorization header to the req
+		req.Header.Add("Authorization", "Bearer "+token)
+		req.Header.Add("Content-Type", "application/json;charset=UTF-8")
+	} else {
+		req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	}
 
 	httpResp, responseMap := postMgr.httpReq(req)
 	if httpResp == nil || responseMap == nil {
@@ -504,7 +527,14 @@ func (postMgr *PostManager) GetBigipRegKey() (string, error) {
 	}
 
 	log.Debugf("[AS3]%v Posting GET BIGIP Reg Key request on %v", postMgr.postManagerPrefix, url)
-	req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	if postMgr.bigIpNext {
+		token := postMgr.getBigipAuthToken(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+		// add authorization header to the req
+		req.Header.Add("Authorization", "Bearer "+token)
+		req.Header.Add("Content-Type", "application/json;charset=UTF-8")
+	} else {
+		req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	}
 
 	httpResp, responseMap := postMgr.httpReq(req)
 	if httpResp == nil || responseMap == nil {
@@ -561,7 +591,14 @@ func (postMgr *PostManager) GetAS3DeclarationFromBigIP() (map[string]interface{}
 	}
 
 	log.Debugf("[AS3]%v posting GET BIGIP AS3 declaration request on %v", postMgr.postManagerPrefix, url)
-	req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	if postMgr.bigIpNext {
+		token := postMgr.getBigipAuthToken(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+		// add authorization header to the req
+		req.Header.Add("Authorization", "Bearer "+token)
+		req.Header.Add("Content-Type", "application/json;charset=UTF-8")
+	} else {
+		req.SetBasicAuth(postMgr.BIGIPUsername, postMgr.BIGIPPassword)
+	}
 
 	httpResp, responseMap := postMgr.httpReq(req)
 	if httpResp == nil || responseMap == nil {
@@ -735,6 +772,12 @@ func (postMgr *PostManager) IsBigIPAppServicesAvailable() error {
 		return nil
 	}
 
+	if postMgr.bigIpNext {
+		am.as3SchemaVersion = "3.0.0"
+		postMgr.AS3VersionInfo = am
+		return nil
+	}
+
 	return fmt.Errorf("CIS versions >= 2.0 are compatible with AS3 versions >=%v. "+
 		"Upgrade AS3 version in BIGIP from %v to %v or above.", as3SupportedVersion,
 		bigIPAS3Version, as3SupportedVersion)
@@ -898,4 +941,33 @@ func getTenantsFromUri(uri string) string {
 		return "all"
 	}
 	return res[1]
+}
+
+func (postMgr *PostManager) getBigipAuthToken(username string, password string) string {
+	authURL := postMgr.BIGIPURL + "/api/v1/login"
+	req, _ := http.NewRequest("GET", authURL, nil)
+	req.SetBasicAuth(username, password)
+	httpResp, responseMap := postMgr.httpReq(req)
+	if httpResp == nil || responseMap == nil {
+		log.Errorf("Internal Error")
+		return ""
+	}
+
+	switch httpResp.StatusCode {
+	case http.StatusOK:
+		if responseMap["token"] != nil {
+			token := responseMap["token"].(string)
+			return token
+		}
+	case http.StatusNotFound:
+		responseMap["code"] = int(responseMap["code"].(float64))
+		if responseMap["code"] == http.StatusNotFound {
+			log.Errorf("Unable to reach the api login endpoint,"+
+				" Error response from BIGIP with status code %v", httpResp.StatusCode)
+		}
+		return ""
+	}
+	// In case of 503 status code : CIS will exit and auto restart of the
+	// controller might fetch the BIGIP version once BIGIP is available.
+	return ""
 }
