@@ -23,6 +23,7 @@ import (
 	"github.com/F5Networks/k8s-bigip-ctlr/v3/pkg/tokenmanager"
 	"os"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -48,7 +49,6 @@ func NewController(params Params) *Controller {
 
 	ctlr := &Controller{
 		resources:       NewResourceStore(),
-		AgentParams:     params.AgentParams,
 		PoolMemberType:  params.PoolMemberType,
 		UseNodeInternal: params.UseNodeInternal,
 		initState:       true,
@@ -63,8 +63,7 @@ func NewController(params Params) *Controller {
 		multiClusterMode:      params.MultiClusterMode,
 		clusterRatio:          make(map[string]*int),
 		clusterAdminState:     make(map[string]cisapiv1.AdminState),
-		AgentMap:              make(map[BigIpKey]*RequestHandler),
-		respChan:              make(chan resourceStatusMeta, 1),
+		respChan:              make(chan *agentConfig, 1),
 		CMTokenManager: tokenmanager.NewTokenManager(
 			params.CMConfigDetails.URL,
 			tokenmanager.Credentials{Username: params.CMConfigDetails.UserName, Password: params.CMConfigDetails.Password},
@@ -74,7 +73,8 @@ func NewController(params Params) *Controller {
 			ManageCustomResources: true,
 			ManageTransportServer: true,
 		},
-		bigIpMap: make(BigIpMap),
+		bigIpMap:   make(BigIpMap),
+		PostParams: PostParams{},
 	}
 
 	log.Debug("Controller Created")
@@ -97,23 +97,23 @@ func NewController(params Params) *Controller {
 
 	// Initialize the controller with base resources in CIS config CR
 	ctlr.initInformers()
-
+	ctlr.RequestHandler.httpClientMetrics = params.httpClientMetrics
 	// create the informers for namespaces and node
 	if err3 := ctlr.setupInformers(); err3 != nil {
 		log.Error("Failed to Setup Informers")
 	}
 
+	// start request handler
+	ctlr.NewRequestHandler(params.UserAgent)
+	ctlr.RequestHandler.startRequestHandler()
+
 	go ctlr.responseHandler(ctlr.respChan)
 
-	// setup agents for bigip label
+	// setup postmanager for bigip label
 	for bigip, _ := range ctlr.bigIpMap {
-
-		ctlr.startAgent(bigip)
-
-		// enable http endpoint
-		go ctlr.enableHttpEndpoint(params.HttpAddress, bigip)
+		ctlr.RequestHandler.startPostManager(bigip)
 	}
-
+	go ctlr.enableHttpEndpoint(params.HttpAddress)
 	ctlr.setupIPAM(params)
 
 	go ctlr.Start()
@@ -121,6 +121,16 @@ func NewController(params Params) *Controller {
 	return ctlr
 }
 
+func (ctlr *Controller) NewRequestHandler(userAgent string) {
+	ctlr.RequestHandler = &RequestHandler{
+		PostManagers:   PostManagers{sync.RWMutex{}, make(map[BigIpKey]*PostManager)},
+		reqChan:        make(chan ResourceConfigRequest, 1),
+		userAgent:      userAgent,
+		respChan:       ctlr.respChan,
+		CMTokenManager: ctlr.CMTokenManager,
+		PostParams:     ctlr.PostParams,
+	}
+}
 func (ctlr *Controller) setupIPAM(params Params) {
 	if params.IPAM {
 		ipamParams := ipammachinery.Params{
