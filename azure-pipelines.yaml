@@ -73,9 +73,8 @@ stages:
             displayName: Check for unit tests
             inputs:
               script: |
-                ls -lR $(GOROOT)
-                ls -lR $(GOPATH)
-                make test
+                ls -l $(find $GOPATH -name ginkgo )
+                ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
           - task: Go@0
             displayName: Install gocov
             inputs:
