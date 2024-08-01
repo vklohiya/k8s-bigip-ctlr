@@ -57,40 +57,40 @@ stages:
             displayName: Check Go format and Suspicious constructs
             inputs:
               script: 'make verify'
-          # - task: Go@0
-          #   displayName: Install ginkgo
-          #   inputs:
-          #     command: 'get'
-          #     arguments: 'github.com/onsi/ginkgo/v2'
-          # - task: Go@0
-          #   displayName: Install gomega
-          #   inputs:
-          #     command: 'get'
-          #     arguments: 'github.com/onsi/gomega'
-          # - task: Go@0
-          #   displayName: Install gocov
-          #   inputs:
-          #     command: 'get'
-          #     arguments: 'github.com/axw/gocov/gocov'
-          # - task: Go@0
-          #   displayName: Install gocov-xml
-          #   inputs:
-          #     command: 'get'
-          #     arguments: 'github.com/AlekSi/gocov-xml'
-          # - task: Go@0
-          #   displayName: Install goveralls
-          #   inputs:
-          #     command: 'get'
-          #     arguments: 'github.com/mattn/goveralls'
-          # - task: Go@0
-          #   displayName: Install azure gocover
-          #   inputs:
-          #     command: 'get'
-          #     arguments: 'github.com/Azure/gocover'
+          - task: Go@0
+            displayName: Install ginkgo
+            inputs:
+              command: 'get'
+              arguments: 'github.com/onsi/ginkgo/v2'
+          - task: Go@0
+            displayName: Install gomega
+            inputs:
+              command: 'get'
+              arguments: 'github.com/onsi/gomega'
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
-              script: 'make test'
+              script: 'ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct'
+          - task: Go@0
+            displayName: Install gocov
+            inputs:
+              command: 'get'
+              arguments: 'github.com/axw/gocov/gocov'
+          - task: Go@0
+            displayName: Install gocov-xml
+            inputs:
+              command: 'get'
+              arguments: 'github.com/AlekSi/gocov-xml'
+          - task: Go@0
+            displayName: Install goveralls
+            inputs:
+              command: 'get'
+              arguments: 'github.com/mattn/goveralls'
+          - task: Go@0
+            displayName: Install azure gocover
+            inputs:
+              command: 'get'
+              arguments: 'github.com/Azure/gocover'
           - task: PublishTestResults@2
             inputs:
               testRunner: JUnit
