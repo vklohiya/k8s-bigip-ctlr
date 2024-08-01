@@ -44,6 +44,14 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - task: CmdLine@2
+            displayName: check go variables
+            inputs:
+              script: |
+                echo "bin - $(GOBIN)"
+                echo "root - $(GOROOT)"
+                echo "path - $(GOPATH)"
+                echo "module - $(modulePath)"
+          - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
               script: 'make verify'
