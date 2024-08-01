@@ -49,12 +49,18 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - script: |
-              mkdir -p '$(GOBIN)'
-              mkdir -p '$(GOPATH)/pkg'
-              mkdir -p '$(modulePath)'
-              echo '##vso[task.prependpath]$(GOBIN)'
-              echo "path - $(PATH)" 
-            displayName: 'Set up the Go workspace'
+              go version
+              mkdir -p $(GOPATH)
+              mkdir -p $(GOBIN)
+              go env -w GO111MODULE=on
+              go mod tidy
+              go install github.com/onsi/ginkgo/v2/ginkgo@latest
+            displayName: 'Install Ginkgo'
+
+          - script: |
+              ginkgo version
+              ginkgo -r -v
+            displayName: 'Run Ginkgo Tests'
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
