@@ -44,26 +44,8 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - script: |
-              go version
-              mkdir -p $(GOPATH)
-              mkdir -p $(GOBIN)
-              go env -w GO111MODULE=on
-              go mod tidy
-              go install github.com/onsi/ginkgo/v2/ginkgo@latest
-            displayName: 'Install Ginkgo'
-            env:
-              GOPATH: $(System.DefaultWorkingDirectory)/gopath
-              GOBIN: $(System.DefaultWorkingDirectory)/gopath/bin
-              PATH: $(GOBIN):$(PATH)
-
-          - script: |
-              ginkgo version
-              ginkgo -r -v
-            displayName: 'Run Ginkgo Tests'
-            env:
-              GOPATH: $(System.DefaultWorkingDirectory)/gopath
-              GOBIN: $(System.DefaultWorkingDirectory)/gopath/bin
-              PATH: $(GOBIN):$(PATH)
+              env
+              ls -lR $(GOROOT)
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
@@ -82,9 +64,7 @@ stages:
             displayName: Check for unit tests
             inputs:
               script: |
-                ls -l $(GOBIN)
-                go install github.com/onsi/ginkgo/v2
-                ls -l $(GOROOT)/bin
+                ls -lR $(GOROOT)
                 ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
           - task: Go@0
             displayName: Install gocov
