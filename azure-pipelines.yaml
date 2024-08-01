@@ -47,10 +47,16 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - script: |
-              echo '##vso[task.prependpath]$(GOBIN)'
-              echo '##vso[task.prependpath]$(GOROOT)/bin'
+              echo '##vso[task.setvariable variable=PATH]$(PATH):$(GOBIN):$(GOBIN)/bin'
+              echo "path - $(PATH)"
+              echo "##vso[task.prependpath]$(GOBIN)"
+              echo "##vso[task.prependpath]$(GOROOT)/bin"
               echo "path - $(PATH)"
             displayName: 'Set up the Go workspace'
+          - task: CmdLine@2
+            displayName: Check Go format and Suspicious constructs
+            inputs:
+              script: 'make verify'
           - task: Go@0
             displayName: Install ginkgo
             inputs:
@@ -81,10 +87,6 @@ stages:
             inputs:
               command: 'get'
               arguments: 'github.com/Azure/gocover'
-          - task: CmdLine@2
-            displayName: Check Go format and Suspicious constructs
-            inputs:
-              script: 'make verify'
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
