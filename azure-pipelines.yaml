@@ -49,7 +49,7 @@ stages:
           - script: |
               echo '##vso[task.prependpath]$(GOBIN)'
               echo '##vso[task.prependpath]$(GOROOT)/bin'
-              echo "path - $(PATH)""
+              echo "path - $(PATH)"
             displayName: 'Set up the Go workspace'
           - task: Go@0
             displayName: Install ginkgo
