@@ -33,6 +33,11 @@ variables:
   operatorBundleImageName: 'f5networks/f5-cis-operator-bundle-devel'
   operatorIndexImage: 'f5networks/f5-cis-operator-index-devel'
   goVersion: 1.21.4
+  GOBIN:  '$(GOPATH)/bin' # Go binaries path
+  GOROOT: '/usr/local/go1.11' # Go installation path
+  GOPATH: '$(system.defaultWorkingDirectory)/gopath' # Go workspace path
+  modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)' # Path to the module's code
+
 
 stages:
   - stage: PreCheck
@@ -44,8 +49,12 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - script: |
-              env
-              ls -lR $(GOROOT)
+              mkdir -p '$(GOBIN)'
+              mkdir -p '$(GOPATH)/pkg'
+              mkdir -p '$(modulePath)'
+              echo '##vso[task.prependpath]$(GOBIN)'
+              echo '##vso[task.prependpath]$(GOROOT)/bin'
+            displayName: 'Set up the Go workspace'
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
@@ -65,7 +74,8 @@ stages:
             inputs:
               script: |
                 ls -lR $(GOROOT)
-                ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
+                ls -lR $(GOPATH)
+                make test
           - task: Go@0
             displayName: Install gocov
             inputs:
