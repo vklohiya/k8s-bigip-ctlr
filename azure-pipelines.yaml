@@ -33,9 +33,9 @@ variables:
   operatorBundleImageName: 'f5networks/f5-cis-operator-bundle-devel'
   operatorIndexImage: 'f5networks/f5-cis-operator-index-devel'
   goVersion: 1.21.4
-  GOBIN:  '$(GOPATH)/bin' # Go binaries path
-  GOPATH: '$(System.DefaultWorkingDirectory)/gopath' # Go workspace path
-  modulePath: '$(GOPATH)/src/github.com/$(build.repository.name)' # Path to the module's code
+  GOPATH: $(System.DefaultWorkingDirectory)/gopath
+  GOBIN: $(System.DefaultWorkingDirectory)/gopath/bin
+  PATH: $(GOBIN):$(PATH)
 
   
 
