@@ -51,7 +51,7 @@ stages:
               echo "path - $(PATH)"
               echo "##vso[task.prependpath]$(GOBIN)"
               echo "##vso[task.prependpath]$(GOROOT)/bin"
-              echo "path - $(PATH)"
+              echo "path - $(PATH)" 
             displayName: 'Set up the Go workspace'
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
@@ -70,7 +70,9 @@ stages:
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
-              script: 'ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct'
+              script: |
+                echo $(GOPATH)/bin
+                ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
           - task: Go@0
             displayName: Install gocov
             inputs:
