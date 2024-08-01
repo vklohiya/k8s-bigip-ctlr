@@ -33,6 +33,9 @@ variables:
   operatorBundleImageName: 'f5networks/f5-cis-operator-bundle-devel'
   operatorIndexImage: 'f5networks/f5-cis-operator-index-devel'
   goVersion: 1.21.4
+  GOPATH: '$(system.defaultWorkingDirectory)/gopath' # Go workspace path
+  GOBIN:  '$(GOPATH)/bin' # Go binaries path
+  
 
 stages:
   - stage: PreCheck
@@ -43,15 +46,10 @@ stages:
             inputs:
               version: $(goVersion)
             displayName: Install Go
-          - task: CmdLine@2
-            displayName: check go variables
-            inputs:
-              script: |
-                which go
-                echo "bin - $(GOBIN)"
-                echo "root - $(GOROOT)"
-                echo "path - $(GOPATH)"
-                go install github.com/onsi/ginkgo/v2
+          - script: |
+              echo '##vso[task.prependpath]$(GOBIN)'
+              echo '##vso[task.prependpath]$(GOROOT)/bin'
+            displayName: 'Set up the Go workspace'
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
