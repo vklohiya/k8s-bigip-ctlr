@@ -56,11 +56,19 @@ stages:
               go mod tidy
               go install github.com/onsi/ginkgo/v2/ginkgo@latest
             displayName: 'Install Ginkgo'
+            env:
+              GOPATH: $(GOPATH)
+              GOBIN: $(GOBIN)
+              PATH: $(GOBIN):$(PATH)
 
           - script: |
               ginkgo version
               ginkgo -r -v
             displayName: 'Run Ginkgo Tests'
+            env:
+              GOPATH: $(GOPATH)
+              GOBIN: $(GOBIN)
+              PATH: $(GOBIN):$(PATH)
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
