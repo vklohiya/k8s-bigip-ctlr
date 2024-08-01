@@ -47,6 +47,7 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - script: |
+              env
               echo '##vso[task.setvariable variable=PATH]$(PATH):$(GOBIN):$(GOBIN)/bin'
               echo "path - $(PATH)"
               echo "##vso[task.prependpath]$(GOBIN)"
