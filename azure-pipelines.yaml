@@ -71,7 +71,7 @@ stages:
             displayName: Check for unit tests
             inputs:
               script: |
-                echo $(GOPATH)/bin
+                ls -l $(GOPATH)/bin
                 ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
           - task: Go@0
             displayName: Install gocov
