@@ -73,6 +73,8 @@ stages:
             displayName: Check for unit tests
             inputs:
               script: |
+                go install github.com/onsi/ginkgo/v2
+                ls -l $(find $GOPATH -name ginkgo )
                 make test
           - task: Go@0
             displayName: Install gocov
