@@ -49,6 +49,9 @@ stages:
               version: $(goVersion)
             displayName: Install Go
           - script: |
+              mkdir -p '$(GOBIN)'
+              mkdir -p '$(GOPATH)/pkg'
+              mkdir -p '$(modulePath)'
               echo '##vso[task.prependpath]$(GOBIN)'
               echo "path - $(PATH)" 
             displayName: 'Set up the Go workspace'
