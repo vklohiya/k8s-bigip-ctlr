@@ -50,7 +50,7 @@ stages:
                 echo "bin - $(GOBIN)"
                 echo "root - $(GOROOT)"
                 echo "path - $(GOPATH)"
-                echo "module - $(modulePath)"
+                go install github.com/onsi/ginkgo/v2
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
