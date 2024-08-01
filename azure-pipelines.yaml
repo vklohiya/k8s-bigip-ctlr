@@ -33,11 +33,6 @@ variables:
   operatorBundleImageName: 'f5networks/f5-cis-operator-bundle-devel'
   operatorIndexImage: 'f5networks/f5-cis-operator-index-devel'
   goVersion: 1.21.4
-  GOPATH: $(System.DefaultWorkingDirectory)/gopath
-  GOBIN: $(System.DefaultWorkingDirectory)/gopath/bin
-  PATH: $(GOBIN):$(PATH)
-
-  
 
 stages:
   - stage: PreCheck
@@ -57,8 +52,8 @@ stages:
               go install github.com/onsi/ginkgo/v2/ginkgo@latest
             displayName: 'Install Ginkgo'
             env:
-              GOPATH: $(GOPATH)
-              GOBIN: $(GOBIN)
+              GOPATH: $(System.DefaultWorkingDirectory)/gopath
+              GOBIN: $(System.DefaultWorkingDirectory)/gopath/bin
               PATH: $(GOBIN):$(PATH)
 
           - script: |
@@ -66,8 +61,8 @@ stages:
               ginkgo -r -v
             displayName: 'Run Ginkgo Tests'
             env:
-              GOPATH: $(GOPATH)
-              GOBIN: $(GOBIN)
+              GOPATH: $(System.DefaultWorkingDirectory)/gopath
+              GOBIN: $(System.DefaultWorkingDirectory)/gopath/bin
               PATH: $(GOBIN):$(PATH)
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
