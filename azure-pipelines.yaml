@@ -56,14 +56,35 @@ stages:
             inputs:
               command: 'get'
               arguments: 'github.com/onsi/ginkgo/v2'
+          - task: Go@0
+            displayName: Install gomega
+            inputs:
+              command: 'get'
+              arguments: 'github.com/onsi/gomega'
+          - task: Go@0
+            displayName: Install gocov
+            inputs:
+              command: 'get'
+              arguments: 'github.com/axw/gocov/gocov'
+          - task: Go@0
+            displayName: Install gocov-xml
+            inputs:
+              command: 'get'
+              arguments: 'github.com/AlekSi/gocov-xml'
+          - task: Go@0
+            displayName: Install goveralls
+            inputs:
+              command: 'get'
+              arguments: 'github.com/mattn/goveralls'
+          - task: Go@0
+            displayName: Install azure gocover
+            inputs:
+              command: 'get'
+              arguments: 'github.com/Azure/gocover'
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
               script: 'make verify'
-          - task: CmdLine@2
-            displayName: Check documentation
-            inputs:
-              script: 'make docs'
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
@@ -84,6 +105,10 @@ stages:
               codeCoverageTool: Cobertura
               summaryFileLocation: $(System.DefaultWorkingDirectory)/**/coverage.xml
               reportDirectory: $(System.DefaultWorkingDirectory)/**/coverage
+          - task: CmdLine@2
+            displayName: Check documentation
+            inputs:
+              script: 'make docs'
   - stage: ContainerImage
     dependsOn: PreCheck
     jobs:
