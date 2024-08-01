@@ -47,6 +47,7 @@ stages:
             displayName: check go variables
             inputs:
               script: |
+                which go
                 echo "bin - $(GOBIN)"
                 echo "root - $(GOROOT)"
                 echo "path - $(GOPATH)"
