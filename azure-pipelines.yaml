@@ -39,11 +39,14 @@ stages:
     jobs:
       - job: Preverification
         steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+            displayName: Install Go
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
-              script: |
-                docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) make verify
+              script: 'make verify'
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
