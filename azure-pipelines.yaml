@@ -46,7 +46,7 @@ stages:
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
-              script: 'make verify'
+              script: 'make cover'
           - task: Go@0
             displayName: Install ginkgo
             inputs:
