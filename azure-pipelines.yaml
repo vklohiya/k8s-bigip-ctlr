@@ -54,6 +54,7 @@ stages:
               mkdir -p '$(modulePath)'
               echo '##vso[task.prependpath]$(GOBIN)'
               echo '##vso[task.prependpath]$(GOROOT)/bin'
+              env
             displayName: 'Set up the Go workspace'
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
