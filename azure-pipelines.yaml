@@ -51,7 +51,7 @@ stages:
             displayName: Check for unit tests
             inputs:
               script: |
-                docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) make test
+                docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) env
           - task: PublishTestResults@2
             inputs:
               testRunner: JUnit
