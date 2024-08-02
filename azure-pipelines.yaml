@@ -32,59 +32,23 @@ variables:
   operatorImageName: 'f5networks/f5-cis-operator-devel'
   operatorBundleImageName: 'f5networks/f5-cis-operator-bundle-devel'
   operatorIndexImage: 'f5networks/f5-cis-operator-index-devel'
-  goVersion: 1.21.4
+  goVersion: 1.22.3
 
 stages:
   - stage: PreCheck
     jobs:
       - job: Preverification
         steps:
-          - task: GoTool@0
-            inputs:
-              version: $(goVersion)
-            displayName: Install Go
           - task: CmdLine@2
             displayName: Check Go format and Suspicious constructs
             inputs:
-              script: 'make create-coverage-report'
-          - task: Go@0
-            displayName: Install ginkgo
-            inputs:
-              command: 'custom'
-              customCommand: 'install'
-              arguments: 'github.com/onsi/ginkgo/v2/ginkgo'
-          - task: Go@0
-            displayName: Install gomega
-            inputs:
-              command: 'custom'
-              customCommand: 'install'
-              arguments: 'github.com/onsi/gomega'
+              script: |
+                docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) make verify
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
               script: |
-                ls -l $(find $GOPATH -name ginkgo )
-                ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
-          - task: Go@0
-            displayName: Install gocov
-            inputs:
-              command: 'get'
-              arguments: 'github.com/axw/gocov/gocov'
-          - task: Go@0
-            displayName: Install gocov-xml
-            inputs:
-              command: 'get'
-              arguments: 'github.com/AlekSi/gocov-xml'
-          - task: Go@0
-            displayName: Install goveralls
-            inputs:
-              command: 'get'
-              arguments: 'github.com/mattn/goveralls'
-          - task: Go@0
-            displayName: Install azure gocover
-            inputs:
-              command: 'get'
-              arguments: 'github.com/Azure/gocover'
+                docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) make test
           - task: PublishTestResults@2
             inputs:
               testRunner: JUnit
@@ -93,7 +57,7 @@ stages:
             displayName: Check for Coverage
             inputs:
               script: |
-                make create-coverage-report
+                docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) create-coverage-report
                 mkdir -p $(System.DefaultWorkingDirectory)/coverage
                 cp -r coverage.html $(System.DefaultWorkingDirectory)/coverage
           - task: PublishCodeCoverageResults@1
