@@ -62,20 +62,21 @@ stages:
           - task: Go@0
             displayName: Install ginkgo
             inputs:
-              command: 'get'
+              command: 'custom'
+              customCommand: 'install'
               arguments: 'github.com/onsi/ginkgo/v2'
           - task: Go@0
             displayName: Install gomega
             inputs:
-              command: 'get'
+              command: 'custom'
+              customCommand: 'install'
               arguments: 'github.com/onsi/gomega'
           - task: CmdLine@2
             displayName: Check for unit tests
             inputs:
               script: |
-                go install github.com/onsi/ginkgo/v2
                 ls -l $(find $GOPATH -name ginkgo )
-                make test
+                ginkgo -r --procs=4 --compilers=1 --randomize-all --randomize-suites --fail-on-pending --keep-going --trace --junit-report=report.xml --timeout=300s --flake-attempts=3 --succinct
           - task: Go@0
             displayName: Install gocov
             inputs:
