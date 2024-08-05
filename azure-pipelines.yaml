@@ -78,6 +78,7 @@ stages:
           - task: PublishCodeCoverageResults@2
             displayName: Publish Code Coverage Results
             inputs:
+              pathToSources: $(System.DefaultWorkingDirectory)
               summaryFileLocation: $(System.DefaultWorkingDirectory)/**/coverage.xml
               failIfCoverageEmpty: true
   - stage: CheckDocumentation
