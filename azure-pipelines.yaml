@@ -166,8 +166,10 @@ stages:
               docker push $(docker_repo):$(BUILD_VERSION)
             displayName: 'Push image to DockerHub'
             condition: startsWith(variables['build.sourceBranch'], 'refs/tags/')
+  - stage: ScanContainerImage
+    dependsOn: ContainerImage
+    jobs:
       - job: ScanContainerImage
-        dependsOn: BuildContainerImage
         steps:
           - script: |
               FILE_VALUE=$(cat next-version.txt)
