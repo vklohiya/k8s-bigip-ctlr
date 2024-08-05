@@ -36,6 +36,7 @@ variables:
 
 stages:
   - stage: VerifyFormatting
+    dependsOn: []
     jobs:
       - job: VerifyFormatting
         steps:
@@ -48,6 +49,7 @@ stages:
             inputs:
               script: 'make verify'
   - stage: RunUnitTests
+    dependsOn: []
     jobs:
       - job: RunUnitTests
         steps:
@@ -62,6 +64,7 @@ stages:
               testRunner: JUnit
               testResultsFiles: $(System.DefaultWorkingDirectory)/**/report.xml
   - stage: RunCoverage
+    dependsOn: []
     jobs:
       - job: RunCoverage
         steps:
@@ -79,6 +82,7 @@ stages:
               summaryFileLocation: $(System.DefaultWorkingDirectory)/**/coverage.xml
               reportDirectory: $(System.DefaultWorkingDirectory)/**/coverage
   - stage: CheckDocumentation
+    dependsOn: []
     jobs:
       - job: CheckDocumentation
         steps:
