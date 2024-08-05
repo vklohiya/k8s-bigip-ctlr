@@ -75,12 +75,11 @@ stages:
                 docker run -t -v $(System.DefaultWorkingDirectory):/go/src/github.com/F5Networks/k8s-bigip-ctlr -w /go/src/github.com/F5Networks/k8s-bigip-ctlr --rm golang:$(goVersion) make create-coverage-report
                 mkdir -p $(System.DefaultWorkingDirectory)/coverage
                 cp -r coverage.html $(System.DefaultWorkingDirectory)/coverage
-          - task: PublishCodeCoverageResults@1
+          - task: PublishCodeCoverageResults@2
             displayName: Publish Code Coverage Results
             inputs:
-              codeCoverageTool: Cobertura
               summaryFileLocation: $(System.DefaultWorkingDirectory)/**/coverage.xml
-              reportDirectory: $(System.DefaultWorkingDirectory)/**/coverage
+              failIfCoverageEmpty: true
   - stage: CheckDocumentation
     dependsOn: []
     jobs:
