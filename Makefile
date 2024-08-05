@@ -64,6 +64,7 @@ local-go-coverage:
 	$(GOPATH)/bin/gocover test --repository-path=. --coverage-mode full --executor-mode go --excludes "**/config/**,**/vlogger/**,**/test/**,**/prometheus/**,**/mockmanager/**" --outputdir ./
 	awk "!/\/config\/|vlogger|prometheus|mockmanager|\/test\/test/" coverage.out >coverage-new.out
 	mv coverage-new.out coverage.out
+	echo 'PWD: $(PWD)'
 	echo 'Grep Coverage: $(shell grep "Coverage (with ignorance)" coverage.html)'
 	echo 'Head Coverage: $(shell grep "Coverage (with ignorance)" coverage.html | head -1 )'
 	echo 'Total Coverage: $(shell grep "Coverage (with ignorance)" coverage.html | head -1 | cut -d ":" -f 2)'
