@@ -67,7 +67,8 @@ local-go-coverage:
 	echo 'Grep Coverage: $(shell grep "Coverage (with ignorance)" coverage.html)'
 	echo 'Head Coverage: $(shell grep "Coverage (with ignorance)" coverage.html | head -1 )'
 	echo 'Total Coverage: $(shell grep "Coverage (with ignorance)" coverage.html | head -1 | cut -d ":" -f 2)'
-	#go tool cover -func=coverage.out | grep "^total:" | awk 'END { print "Total coverage:", $$3, "of statements" }'
+	grep "Coverage (with ignorance)" coverage.html | head -1 | awk 'END { print "Total coverage:", $$4, "of statements" }'
+	#go tool cover -func=coverage.out | grep "^total:" | awk 'END { print "Total coverage-vivek:", $$3, "of statements" }'
 	@if [ $(COVERALLS_TOKEN) ]; then \
 		go install github.com/mattn/goveralls@latest; \
 		echo "Pushing coverage data to coveralls"; \
