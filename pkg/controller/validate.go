@@ -73,7 +73,7 @@ func (ctlr *Controller) checkValidVirtualServer(
 	}
 
 	bindAddr := vsResource.Spec.VirtualServerAddress
-	if ctlr.ipamCli == nil {
+	if ctlr.multiClusterHandler.getIPAMClient(ctlr.multiClusterHandler.LocalClusterName) == nil {
 
 		// This ensures that pool-only mode only logs the message below the first
 		// time we see a config.
@@ -180,7 +180,7 @@ func (ctlr *Controller) checkValidTransportServer(
 
 	bindAddr := tsResource.Spec.VirtualServerAddress
 
-	if ctlr.ipamCli == nil {
+	if ctlr.multiClusterHandler.getIPAMClient(ctlr.multiClusterHandler.LocalClusterName) == nil {
 		// This ensures that pool-only mode only logs the message below the first
 		// time we see a config.
 		if bindAddr == "" {
@@ -261,7 +261,7 @@ func (ctlr *Controller) checkValidIngressLink(
 
 	bindAddr := il.Spec.VirtualServerAddress
 
-	if ctlr.ipamCli == nil {
+	if ctlr.multiClusterHandler.getIPAMClient(ctlr.multiClusterHandler.LocalClusterName) == nil {
 		if bindAddr == "" {
 			err = fmt.Sprintf("No IP was specified for ingresslink %s", ilName)
 			log.Errorf(err)
@@ -292,7 +292,7 @@ func (ctlr *Controller) checkValidMultiClusterService(mcs cisapiv1.MultiClusterS
 	}
 	if mcs.ClusterName != "" {
 		// Check if cluster config is provided for the cluster where the service is running
-		if _, ok := ctlr.multiClusterConfigs.ClusterConfigs[mcs.ClusterName]; !ok && mcs.ClusterName != ctlr.multiClusterConfigs.LocalClusterName {
+		if _, ok := ctlr.multiClusterHandler.ClusterConfigs[mcs.ClusterName]; !ok && mcs.ClusterName != ctlr.multiClusterHandler.LocalClusterName {
 			return fmt.Errorf("cluster config for the cluster %s is not provided in extended configmap", mcs.ClusterName)
 		}
 	}

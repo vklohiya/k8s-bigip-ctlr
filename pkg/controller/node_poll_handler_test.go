@@ -6,22 +6,21 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/util/workqueue"
 )
 
 var _ = Describe("Node Poller Handler", func() {
 	var mockCtlr *mockController
 	BeforeEach(func() {
 		mockCtlr = newMockController()
-		mockCtlr.multiClusterConfigs = NewClusterHandler()
+		mockCtlr.multiClusterHandler = NewClusterHandler(Params{})
 		mockCtlr.Agent = newMockAgent(&test.MockWriter{FailStyle: test.Success})
 		writer := &test.MockWriter{
 			FailStyle: test.Success,
 			Sections:  make(map[string]interface{}),
 		}
 		mockCtlr.Agent.ConfigWriter = writer
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset()}
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].InformerStore = initInformerStore()
+		mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset()}
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].InformerStore = initInformerStore()
 		mockCtlr.multiClusterResources = newMultiClusterResourceStore()
 	})
 
@@ -57,7 +56,7 @@ var _ = Describe("Node Poller Handler", func() {
 		for _, node := range nodeObjs {
 			mockCtlr.addNode(&node)
 		}
-		Expect(len(mockCtlr.multiClusterConfigs.ClusterConfigs[""].nodeInformer.nodeInformer.GetIndexer().List())).To(Equal(3))
+		Expect(len(mockCtlr.multiClusterHandler.ClusterConfigs[""].nodeInformer.nodeInformer.GetIndexer().List())).To(Equal(3))
 		nodes, err := mockCtlr.getNodes(nodeObjs)
 		//verify node with NotReady state not added to node list
 		Expect(len(nodes)).To(Equal(2))
@@ -72,7 +71,7 @@ var _ = Describe("Node Poller Handler", func() {
 		Expect(nodes).ToNot(BeNil(), "Failed to get nodes")
 		Expect(err).To(BeNil(), "Failed to get nodes")
 
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].oldNodes = nodes
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].oldNodes = nodes
 
 		// Negative case
 		nodes, err = mockCtlr.getNodes([]interface{}{nodeAddr1, nodeAddr2})
@@ -93,11 +92,9 @@ var _ = Describe("Node Poller Handler", func() {
 		mockCtlr.setNodeInformer("")
 		mockCtlr.UseNodeInternal = true
 		namespace := "default"
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces = make(map[string]bool)
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces[namespace] = true
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces = make(map[string]bool)
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces[namespace] = true
 		mockCtlr.addNamespacedInformers(namespace, false, "")
-		mockCtlr.resourceQueue = workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(), "custom-resource-controller")
 
 		// Static routes with Node taints
 		nodeAddr1 := v1.NodeAddress{
@@ -353,7 +350,7 @@ var _ = Describe("Node Poller Handler", func() {
 		Expect(ok).To(Equal(true))
 		Expect(len(mockWriter.Sections)).To(Equal(1))
 		Expect(mockWriter.Sections["static-routes"]).To(Equal(expectedRouteSection))
-		mockCtlr.resourceQueue.ShutDown()
+		mockCtlr.multiClusterHandler.resourceQueue.ShutDown()
 
 	})
 
@@ -378,13 +375,11 @@ var _ = Describe("Node Poller Handler", func() {
 	//				options.LabelSelector = mockCtlr.nativeResourceSelector.String()
 	//			},
 	//		)
-	//		mockCtlr.resourceQueue = workqueue.NewNamedRateLimitingQueue(
-	//			workqueue.DefaultControllerRateLimiter(), "custom-resource-controller")
 	//
 	//	})
 	//
 	//	AfterEach(func() {
-	//		mockCtlr.resourceQueue.ShutDown()
+	//		mockCtlr.multiClusterHandler.resourceQueue.ShutDown()
 	//	})
 	//
 	//	It("Processes IngressLinks on node update", func() {
@@ -455,20 +450,20 @@ var _ = Describe("Node Poller Handler", func() {
 	//		tempNodeObjs := nodeObjs
 	//
 	//		mockCtlr.ProcessNodeUpdate(nil, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(0))
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(0))
 	//		mockCtlr.initState = true
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(0))
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(0))
 	//		mockCtlr.ProcessNodeUpdate(nil, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(0))
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(0))
 	//		mockCtlr.initState = false
 	//		nodeObjs = tempNodeObjs
 	//		mockCtlr.oldNodes = nil
 	//		// Process Node update and verify that ingressLink is added to the resource queue for processing
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"IngressLink not added to resource queue for processing")
-	//		key, _ := mockCtlr.resourceQueue.Get()
+	//		key, _ := mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey := key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(ingressLink.Name),
 	//			"IngressLink not added to resource queue for processing")
@@ -478,9 +473,9 @@ var _ = Describe("Node Poller Handler", func() {
 	//		err = mockCtlr.crInformers[""].vsInformer.GetStore().Add(vs)
 	//		Expect(err).To(BeNil(), "Failed to add Virtual Server resource to informer store")
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"Virtual Server not added to resource queue for processing")
-	//		key, _ = mockCtlr.resourceQueue.Get()
+	//		key, _ = mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey = key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(vs.Name), "Virtual Server not added to resource queue for processing")
 	//		mockCtlr.crInformers[""].vsInformer.GetStore().Delete(vs)
@@ -489,9 +484,9 @@ var _ = Describe("Node Poller Handler", func() {
 	//		err = mockCtlr.crInformers[""].tsInformer.GetStore().Add(ts)
 	//		Expect(err).To(BeNil(), "Failed to add Transport Server resource to informer store")
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"Transport Server not added to resource queue for processing")
-	//		key, _ = mockCtlr.resourceQueue.Get()
+	//		key, _ = mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey = key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(ts.Name), "Transport Server not added to resource queue for processing")
 	//		mockCtlr.crInformers[""].tsInformer.GetStore().Delete(ts)
@@ -504,9 +499,9 @@ var _ = Describe("Node Poller Handler", func() {
 	//		mockCtlr.crInformers["nginx-ingress"] = mockCtlr.newNamespacedCustomResourceInformerForCluster("nginx-ingress")
 	//		mockCtlr.crInformers["nginx-ingress"].ilInformer.GetStore().Add(ingressLink)
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"IngressLink not added to resource queue for processing")
-	//		key, _ = mockCtlr.resourceQueue.Get()
+	//		key, _ = mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey = key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(ingressLink.Name),
 	//			"IngressLink not added to resource queue for processing")
@@ -515,9 +510,9 @@ var _ = Describe("Node Poller Handler", func() {
 	//		mockCtlr.crInformers["default"].vsInformer.GetStore().Add(vs)
 	//		nodeObjs = nodeObjs[:len(nodeObjs)-1]
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"Virtual Server not added to resource queue for processing")
-	//		key, _ = mockCtlr.resourceQueue.Get()
+	//		key, _ = mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey = key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(vs.Name), "Virtual Server not added to resource queue for processing")
 	//		mockCtlr.crInformers["default"].vsInformer.GetStore().Delete(vs)
@@ -525,9 +520,9 @@ var _ = Describe("Node Poller Handler", func() {
 	//		mockCtlr.crInformers["default"].tsInformer.GetStore().Add(ts)
 	//		nodeObjs = nodeObjs[:len(nodeObjs)-1]
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"Transport Server not added to resource queue for processing")
-	//		key, _ = mockCtlr.resourceQueue.Get()
+	//		key, _ = mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey = key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(ts.Name), "Transport Server not added to resource queue for processing")
 	//		mockCtlr.crInformers["default"].tsInformer.GetStore().Delete(ts)
@@ -550,9 +545,9 @@ var _ = Describe("Node Poller Handler", func() {
 	//		nodeObjs = nodeObjs[:len(nodeObjs)-1]
 	//		// Process Node update and verify that ingressLink is added to the resource queue for processing
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(1),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(1),
 	//			"IngressLink not added to resource queue for processing")
-	//		key, _ = mockCtlr.resourceQueue.Get()
+	//		key, _ = mockCtlr.multiClusterHandler.resourceQueue.Get()
 	//		rKey = key.(*rqKey)
 	//		Expect(rKey.rscName).To(Equal(ingressLink.Name),
 	//			"IngressLink not added to resource queue for processing")
@@ -560,7 +555,7 @@ var _ = Describe("Node Poller Handler", func() {
 	//		// Verify that ingressLink isn't added to the resource queue for processing if no node is added/deleted
 	//		// Process Node update and verify
 	//		mockCtlr.ProcessNodeUpdate(nodeObjs, "")
-	//		Expect(mockCtlr.resourceQueue.Len()).To(Equal(0),
+	//		Expect(mockCtlr.multiClusterHandler.resourceQueue.Len()).To(Equal(0),
 	//			"IngressLink should not be added to resource queue for processing")
 	//	})
 	//})

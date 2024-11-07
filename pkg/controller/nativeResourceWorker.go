@@ -515,9 +515,9 @@ func (ctlr *Controller) prepareResourceConfigFromRoute(
 				// update the multicluster resource serviceMap with local cluster services
 				ctlr.updateMultiClusterResourceServiceMap(rsCfg, rsRef, bs.Name, route.Spec.Path, pool, servicePort, "")
 				// update the multicluster resource serviceMap with HA pair cluster services
-				if ctlr.discoveryMode == Active && ctlr.multiClusterConfigs.HAPairClusterName != "" {
+				if ctlr.discoveryMode == Active && ctlr.multiClusterHandler.HAPairClusterName != "" {
 					ctlr.updateMultiClusterResourceServiceMap(rsCfg, rsRef, bs.Name, route.Spec.Path, pool, servicePort,
-						ctlr.multiClusterConfigs.HAPairClusterName)
+						ctlr.multiClusterHandler.HAPairClusterName)
 				}
 			} else {
 				// Update the multiCluster resource service map for each pool which constitutes a service in case of ratio mode
@@ -920,7 +920,7 @@ func (ctlr *Controller) processGlobalExtendedConfigMap() {
 		log.Warningf("Ensure Global Extended Configmap is created in CIS monitored namespace")
 		// If informer fails to fetch configmap which may occur if cis just started which means informers may not have
 		// synced properly then try to fetch using kubeClient
-		clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+		clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 		cm, err = clusterConfig.kubeClient.CoreV1().ConfigMaps(ns).Get(context.TODO(), cmName, metav1.GetOptions{})
 	}
 	// Exit gracefully if Extended configmap is not found
@@ -966,13 +966,13 @@ func (ctlr *Controller) setNamespaceLabelMode(cm *v1.ConfigMap) error {
 		}
 		if len(ergc.NamespaceLabel) > 0 {
 			namespaceLabel = true
-			ctlr.resourceContext.namespaceLabelMode = true
+			ctlr.namespaceLabelMode = true
 		}
 	}
 	if namespace && namespaceLabel {
 		return fmt.Errorf("can not specify both namespace and namespace-label in extended configmap %v/%v", cm.Namespace, cm.Name)
 	}
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 	if clusterConfig.namespaceLabel == "" && namespaceLabel {
 		return fmt.Errorf("--namespace-label deployment parameter is required with namespace-label in extended configmap")
 	}
@@ -987,10 +987,10 @@ func (ctlr *Controller) setNamespaceLabelMode(cm *v1.ConfigMap) error {
 			// setting up the namespace nsLabel informer
 			nsLabel := fmt.Sprintf("%v,%v", clusterConfig.namespaceLabel, ergc.NamespaceLabel)
 			if _, ok := clusterConfig.nsInformers[nsLabel]; !ok {
-				err := ctlr.createNamespaceLabeledInformerForCluster(nsLabel, "")
+				err := ctlr.multiClusterHandler.createNamespaceLabeledInformerForCluster(nsLabel, clusterConfig)
 				if err != nil {
 					log.Errorf("%v %v", ctlr.getMultiClusterLog(), err)
-					clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+					clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 					for _, nsInf := range clusterConfig.nsInformers {
 						for _, v := range nsInf.nsInformer.GetIndexer().List() {
 							ns := v.(*v1.Namespace)
@@ -1109,7 +1109,7 @@ func (ctlr *Controller) processRouteConfigFromGlobalCM(es extendedSpec, isDelete
 		if ctlr.resources.extdSpecMap[routeGroupKey].local == nil {
 			delete(ctlr.resources.extdSpecMap, routeGroupKey)
 			if ctlr.namespaceLabelMode {
-				clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+				clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 				// deleting and stopping the namespaceLabel informers if a routeGroupKey is modified or deleted
 				nsLabel := fmt.Sprintf("%v,%v", clusterConfig.namespaceLabel, routeGroupKey)
 				if nsInf, ok := clusterConfig.nsInformers[nsLabel]; ok {
@@ -1613,7 +1613,7 @@ func (ctlr *Controller) updateRouteAdmitStatus(
 		})
 		// updating to the new status
 		route.Status.Ingress = routeStatusIngress
-		clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+		clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 		_, err := clusterConfig.routeClientV1.Routes(route.ObjectMeta.Namespace).UpdateStatus(context.TODO(), route, metaV1.UpdateOptions{})
 		if err == nil {
 			log.Infof("Admitted Route -  %v", route.ObjectMeta.Name)
@@ -1628,7 +1628,7 @@ func (ctlr *Controller) updateRouteAdmitStatus(
 // remove the route admit status for routes which are not monitored by CIS anymore
 func (ctlr *Controller) eraseAllRouteAdmitStatus() {
 	// Get the list of all unwatched Routes from all NS.
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 	unmonitoredOptions := metaV1.ListOptions{
 		LabelSelector: strings.ReplaceAll(clusterConfig.routeLabel, " in ", " notin "),
 	}
@@ -1637,8 +1637,8 @@ func (ctlr *Controller) eraseAllRouteAdmitStatus() {
 		log.Errorf("[CORE] Error listing all Routes: %v", err)
 		return
 	}
-	ctlr.processedHostPath.Lock()
-	defer ctlr.processedHostPath.Unlock()
+	ctlr.multiClusterHandler.processedHostPath.Lock()
+	defer ctlr.multiClusterHandler.processedHostPath.Unlock()
 	for _, route := range unmonitoredRoutes.Items {
 		ctlr.eraseRouteAdmitStatus(fmt.Sprintf("%v/%v", route.Namespace, route.Name))
 		// This removes the deleted route's entry from host-path map
@@ -1649,11 +1649,11 @@ func (ctlr *Controller) eraseAllRouteAdmitStatus() {
 		} else {
 			key = route.Spec.Host + route.Spec.Path
 		}
-		//ctlr.processedHostPath.Lock()
-		if timestamp, ok := ctlr.processedHostPath.processedHostPathMap[key]; ok && timestamp == route.ObjectMeta.CreationTimestamp {
-			delete(ctlr.processedHostPath.processedHostPathMap, key)
+		//ctlr.multiClusterHandler.processedHostPath.Lock()
+		if timestamp, ok := ctlr.multiClusterHandler.processedHostPath.processedHostPathMap[key]; ok && timestamp == route.ObjectMeta.CreationTimestamp {
+			delete(ctlr.multiClusterHandler.processedHostPath.processedHostPathMap, key)
 		}
-		//ctlr.processedHostPath.Unlock()
+		//ctlr.multiClusterHandler.processedHostPath.Unlock()
 	}
 }
 
@@ -1675,7 +1675,7 @@ func (ctlr *Controller) eraseRouteAdmitStatus(rscKey string) {
 			route.Status.Ingress = append(route.Status.Ingress[:i], route.Status.Ingress[i+1:]...)
 			erased := false
 			retryCount := 0
-			clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+			clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 			for !erased && retryCount < 3 {
 				_, err := clusterConfig.routeClientV1.Routes(route.ObjectMeta.Namespace).UpdateStatus(context.TODO(), route, metaV1.UpdateOptions{})
 				if err != nil {
@@ -1716,8 +1716,8 @@ func (ctlr *Controller) fetchRoute(rscKey string) *routeapi.Route {
 
 func (ctlr *Controller) checkValidRoute(route *routeapi.Route, plcSSLProfiles rgPlcSSLProfiles) bool {
 	// Validate the hostpath
-	ctlr.processedHostPath.Lock()
-	defer ctlr.processedHostPath.Unlock()
+	ctlr.multiClusterHandler.processedHostPath.Lock()
+	defer ctlr.multiClusterHandler.processedHostPath.Unlock()
 	var key string
 	routeKey := fmt.Sprintf("%s/%s", route.Namespace, route.Name)
 	if route.Spec.Path == "/" || len(route.Spec.Path) == 0 {
@@ -1725,7 +1725,7 @@ func (ctlr *Controller) checkValidRoute(route *routeapi.Route, plcSSLProfiles rg
 	} else {
 		key = route.Spec.Host + route.Spec.Path
 	}
-	if processedRouteTimestamp, found := ctlr.processedHostPath.processedHostPathMap[key]; found {
+	if processedRouteTimestamp, found := ctlr.multiClusterHandler.processedHostPath.processedHostPathMap[key]; found {
 		// update the status if different route
 		if processedRouteTimestamp.Before(&route.ObjectMeta.CreationTimestamp) {
 			message := fmt.Sprintf("Discarding route %v as other route already exposes URI %v%v and is older ", route.Name, route.Spec.Host, route.Spec.Path)
@@ -1862,25 +1862,25 @@ func (ctlr *Controller) checkValidRoute(route *routeapi.Route, plcSSLProfiles rg
 
 func (ctlr *Controller) updateHostPathMap(timestamp metav1.Time, key string) {
 	// This function updates the processedHostPathMap
-	ctlr.processedHostPath.Lock()
-	defer ctlr.processedHostPath.Unlock()
-	for hostPath, routeTimestamp := range ctlr.processedHostPath.processedHostPathMap {
+	ctlr.multiClusterHandler.processedHostPath.Lock()
+	defer ctlr.multiClusterHandler.processedHostPath.Unlock()
+	for hostPath, routeTimestamp := range ctlr.multiClusterHandler.processedHostPath.processedHostPathMap {
 		if routeTimestamp == timestamp && hostPath != key {
 			// Deleting the ProcessedHostPath map if route's path is changed
-			delete(ctlr.processedHostPath.processedHostPathMap, hostPath)
+			delete(ctlr.multiClusterHandler.processedHostPath.processedHostPathMap, hostPath)
 			//track removed/modified hosts for EDNS processing
-			ctlr.processedHostPath.removedHosts = append(ctlr.processedHostPath.removedHosts, ctlr.GetHostFromHostPath(hostPath))
+			ctlr.multiClusterHandler.processedHostPath.removedHosts = append(ctlr.multiClusterHandler.processedHostPath.removedHosts, ctlr.GetHostFromHostPath(hostPath))
 		}
 	}
 	// adding the ProcessedHostPath map entry
-	ctlr.processedHostPath.processedHostPathMap[key] = timestamp
+	ctlr.multiClusterHandler.processedHostPath.processedHostPathMap[key] = timestamp
 }
 
 func (ctlr *Controller) deleteHostPathMapEntry(route *routeapi.Route) {
 	// This function deletes the route entry from processedHostPath
-	ctlr.processedHostPath.Lock()
-	defer ctlr.processedHostPath.Unlock()
-	for hostPath, routeTimestamp := range ctlr.processedHostPath.processedHostPathMap {
+	ctlr.multiClusterHandler.processedHostPath.Lock()
+	defer ctlr.multiClusterHandler.processedHostPath.Unlock()
+	for hostPath, routeTimestamp := range ctlr.multiClusterHandler.processedHostPath.processedHostPathMap {
 		var key string
 		if route.Spec.Path == "/" || len(route.Spec.Path) == 0 {
 			key = route.Spec.Host + "/"
@@ -1889,9 +1889,9 @@ func (ctlr *Controller) deleteHostPathMapEntry(route *routeapi.Route) {
 		}
 		if routeTimestamp == route.CreationTimestamp && hostPath == key {
 			// Deleting the ProcessedHostPath map if route's path is changed
-			delete(ctlr.processedHostPath.processedHostPathMap, hostPath)
+			delete(ctlr.multiClusterHandler.processedHostPath.processedHostPathMap, hostPath)
 			//track removed/modified hosts for EDNS processing
-			ctlr.processedHostPath.removedHosts = append(ctlr.processedHostPath.removedHosts, ctlr.GetHostFromHostPath(key))
+			ctlr.multiClusterHandler.processedHostPath.removedHosts = append(ctlr.multiClusterHandler.processedHostPath.removedHosts, ctlr.GetHostFromHostPath(key))
 		}
 	}
 }
@@ -1909,7 +1909,7 @@ func (ctlr *Controller) getNamespacesForRouteGroup(namespaceGroup string) []stri
 			namespaces = append(namespaces, namespaceGroup)
 			ctlr.resources.invertedNamespaceLabelMap[namespaceGroup] = namespaceGroup
 		} else {
-			clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+			clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 			nsLabel := fmt.Sprintf("%v,%v", clusterConfig.namespaceLabel, namespaceGroup)
 			nss, err := clusterConfig.kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{LabelSelector: nsLabel})
 			if err != nil {
@@ -2057,8 +2057,8 @@ func (ctlr *Controller) readMultiClusterConfigFromGlobalCM(haClusterConfig HAClu
 					return err
 				}
 			}
-			ctlr.multiClusterConfigs.HAPairClusterName = haClusterConfig.SecondaryCluster.ClusterName
-			ctlr.multiClusterConfigs.LocalClusterName = primaryClusterName
+			ctlr.multiClusterHandler.HAPairClusterName = haClusterConfig.SecondaryCluster.ClusterName
+			ctlr.multiClusterHandler.LocalClusterName = primaryClusterName
 		}
 		if ctlr.multiClusterMode == SecondaryCIS && haClusterConfig.PrimaryCluster != (ClusterDetails{}) {
 			// Both cluster name and secret are mandatory
@@ -2093,8 +2093,8 @@ func (ctlr *Controller) readMultiClusterConfigFromGlobalCM(haClusterConfig HAClu
 				}
 			}
 
-			ctlr.multiClusterConfigs.HAPairClusterName = haClusterConfig.PrimaryCluster.ClusterName
-			ctlr.multiClusterConfigs.LocalClusterName = secondaryClusterName
+			ctlr.multiClusterHandler.HAPairClusterName = haClusterConfig.PrimaryCluster.ClusterName
+			ctlr.multiClusterHandler.LocalClusterName = secondaryClusterName
 		}
 	}
 
@@ -2105,7 +2105,7 @@ func (ctlr *Controller) readMultiClusterConfigFromGlobalCM(haClusterConfig HAClu
 	// specified externalClusterConfigs earlier and now removed those configs
 	if externalClusterConfigs == nil || len(externalClusterConfigs) == 0 {
 		// Clean up the clusterConfigs
-		ctlr.multiClusterConfigs.cleanClusterCache(primaryClusterName, secondaryClusterName, currentClusterSecretKeys)
+		ctlr.multiClusterHandler.cleanClusterCache(primaryClusterName, secondaryClusterName, currentClusterSecretKeys)
 		for clusterName := range ctlr.clusterRatio {
 			// Avoid deleting HA cluster related configs
 			if clusterName == primaryClusterName || clusterName == secondaryClusterName || clusterName == "" {
@@ -2143,7 +2143,7 @@ func (ctlr *Controller) readMultiClusterConfigFromGlobalCM(haClusterConfig HAClu
 			log.Warningf("[MultiCluster]  %v", err.Error())
 			continue
 		}
-		clusterConfig := ctlr.multiClusterConfigs.getClusterConfig(mcc.ClusterName)
+		clusterConfig := ctlr.multiClusterHandler.getClusterConfig(mcc.ClusterName)
 		// If cluster config has been processed already and kubeclient has been created then skip it
 		if clusterConfig != nil {
 			// Skip processing the cluster config as it's already processed
@@ -2165,7 +2165,7 @@ func (ctlr *Controller) readMultiClusterConfigFromGlobalCM(haClusterConfig HAClu
 				//update serviceTypeLB discovery in externalConfig cache
 				clusterConfig.clusterDetails.ServiceTypeLBDiscovery = mcc.ServiceTypeLBDiscovery
 				if mcc.ServiceTypeLBDiscovery {
-					informerStore := ctlr.multiClusterConfigs.getInformerStore(mcc.ClusterName)
+					informerStore := ctlr.multiClusterHandler.getInformerStore(mcc.ClusterName)
 					//create pool and resource informers if not present
 					if informerStore == nil {
 						err := ctlr.setupAndStartExternalClusterInformers(mcc.ClusterName)
@@ -2208,7 +2208,7 @@ func (ctlr *Controller) readMultiClusterConfigFromGlobalCM(haClusterConfig HAClu
 		}
 	}
 	// Check if a cluster config has been removed then remove the data associated with it from the externalClustersConfig store
-	ctlr.multiClusterConfigs.cleanClusterCache(primaryClusterName, secondaryClusterName, currentClusterSecretKeys)
+	ctlr.multiClusterHandler.cleanClusterCache(primaryClusterName, secondaryClusterName, currentClusterSecretKeys)
 	return nil
 }
 
@@ -2220,7 +2220,7 @@ func (ctlr *Controller) updateClusterConfigStore(kubeConfigSecret *v1.Secret, mc
 	// if secret associated with a cluster kubeconfig is deleted then remove it from clusterKubeConfig store
 	if deleted {
 		// Delete kubeclients from multicluster config store
-		ctlr.multiClusterConfigs.deleteClusterConfig(mcc.ClusterName)
+		ctlr.multiClusterHandler.deleteClusterConfig(mcc.ClusterName)
 		return nil
 	}
 	// Extract the kubeconfig from the secret
@@ -2233,16 +2233,17 @@ func (ctlr *Controller) updateClusterConfigStore(kubeConfigSecret *v1.Secret, mc
 	if err != nil {
 		return err
 	}
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig(mcc.ClusterName)
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig(mcc.ClusterName)
 	if clusterConfig == nil {
 		clusterConfig = newClusterConfig()
+		clusterConfig.EventChan = ctlr.EventChan
 	}
 	// Create clientset using the provided kubeconfig for the respective cluster
-	err = ctlr.setupClientsforCluster(config, false, mcc.ClusterName, clusterConfig)
+	err = ctlr.multiClusterHandler.setupClientsforCluster(config, false, mcc.ClusterName, clusterConfig, ctlr.mode)
 	// update serviceTypeLBDiscovery in config
 	clusterConfig.clusterDetails.ServiceTypeLBDiscovery = mcc.ServiceTypeLBDiscovery
 	// Update the clusterConfig in the externalClustersConfig store
-	ctlr.multiClusterConfigs.addClusterConfig(mcc.ClusterName, clusterConfig)
+	ctlr.multiClusterHandler.addClusterConfig(mcc.ClusterName, clusterConfig)
 	if err != nil {
 		return fmt.Errorf("Failed to create clients for cluster %s with kube-config fetched from secret %s: %v", mcc.ClusterName, mcc.Secret, err)
 	}
@@ -2294,7 +2295,7 @@ func (ctlr *Controller) fetchKubeConfigSecret(secret string, clusterName string)
 	if !exist {
 		log.Debugf("[MultiCluster] Fetching secret: %s for cluster: %s using kubeclient", secretName, clusterName)
 		// During start up the informers may not be updated so, try to fetch secret using kubeClient
-		clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+		clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 		kubeConfigSecret, err = clusterConfig.kubeClient.CoreV1().Secrets(secretNamespace).Get(context.Background(), secretName,
 			metav1.GetOptions{})
 		if err != nil {

@@ -30,7 +30,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 
-	ficV1 "github.com/F5Networks/f5-ipam-controller/pkg/ipamapis/apis/fic/v1"
 	cisapiv1 "github.com/F5Networks/k8s-bigip-ctlr/v2/config/apis/cis/v1"
 	cisinfv1 "github.com/F5Networks/k8s-bigip-ctlr/v2/config/client/informers/externalversions/cis/v1"
 	log "github.com/F5Networks/k8s-bigip-ctlr/v2/pkg/vlogger"
@@ -230,7 +229,7 @@ func (comInfr *CommonInformer) stop() {
 }
 
 func (ctlr *Controller) watchingAllNamespaces(clusterName string) bool {
-	informerStore := ctlr.multiClusterConfigs.getInformerStore(clusterName)
+	informerStore := ctlr.multiClusterHandler.getInformerStore(clusterName)
 	switch ctlr.mode {
 	case OpenShiftMode, KubernetesMode:
 		if len(informerStore.comInformers) == 0 || len(informerStore.nrInformers) == 0 {
@@ -255,7 +254,7 @@ func (ctlr *Controller) getNamespacedCRInformer(
 	if ctlr.watchingAllNamespaces("") {
 		namespace = ""
 	}
-	informerStore := ctlr.multiClusterConfigs.getInformerStore("")
+	informerStore := ctlr.multiClusterHandler.getInformerStore("")
 	crInf, found := informerStore.crInformers[namespace]
 	return crInf, found
 }
@@ -266,7 +265,7 @@ func (ctlr *Controller) getNamespacedCommonInformer(
 	if ctlr.watchingAllNamespaces("") {
 		namespace = ""
 	}
-	informerStore := ctlr.multiClusterConfigs.getInformerStore("")
+	informerStore := ctlr.multiClusterHandler.getInformerStore("")
 	comInf, found := informerStore.comInformers[namespace]
 	return comInf, found
 }
@@ -277,14 +276,14 @@ func (ctlr *Controller) getNamespacedNativeInformer(
 	if ctlr.watchingAllNamespaces("") {
 		namespace = ""
 	}
-	informerStore := ctlr.multiClusterConfigs.getInformerStore("")
+	informerStore := ctlr.multiClusterHandler.getInformerStore("")
 	nrInf, found := informerStore.nrInformers[namespace]
 	return nrInf, found
 }
 
 func (ctlr *Controller) getWatchingNamespaces() []string {
 	var namespaces []string
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 	if ctlr.watchingAllNamespaces("") {
 		// get the kubeclient from the clusterconfigs
 		nss, err := clusterConfig.kubeClient.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
@@ -313,7 +312,7 @@ func (ctlr *Controller) addNamespacedInformers(
 		return fmt.Errorf(
 			"Cannot add additional namespaces when already watching all.")
 	}
-	informerStore := ctlr.multiClusterConfigs.getInformerStore("")
+	informerStore := ctlr.multiClusterHandler.getInformerStore("")
 	if len(informerStore.comInformers) > 0 && "" == namespace {
 		return fmt.Errorf(
 			"Cannot watch all namespaces when already watching specific ones.")
@@ -364,7 +363,7 @@ func (ctlr *Controller) newNamespacedCustomResourceInformerForCluster(
 	clusterName string,
 ) *CRInformer {
 	log.Debugf("Creating Custom Resource Informers for Namespace: %v", namespace)
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig(clusterName)
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig(clusterName)
 	crOptions := func(options *metav1.ListOptions) {
 		options.LabelSelector = clusterConfig.customResourceSelector.String()
 	}
@@ -419,7 +418,7 @@ func (ctlr *Controller) newNamespacedNativeResourceInformer(
 		namespace: namespace,
 		stopCh:    make(chan struct{}),
 	}
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 	switch ctlr.mode {
 	case OpenShiftMode:
 		// Ensure the default server cert is loaded
@@ -447,7 +446,7 @@ func (ctlr *Controller) newNamespacedNativeResourceInformer(
 func (ctlr *Controller) setNodeInformer(clusterName string) NodeInformer {
 	resyncPeriod := 0 * time.Second
 	var restClientv1 rest.Interface
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig("")
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig("")
 	nodeOptions := func(options *metav1.ListOptions) {
 		options.LabelSelector = clusterConfig.nodeLabelSelector
 	}
@@ -469,7 +468,7 @@ func (ctlr *Controller) setNodeInformer(clusterName string) NodeInformer {
 		),
 		clusterName: clusterName,
 	}
-	informerStore := ctlr.multiClusterConfigs.getInformerStore(clusterName)
+	informerStore := ctlr.multiClusterHandler.getInformerStore(clusterName)
 	informerStore.nodeInformer = &nodeInf
 	ctlr.addNodeEventUpdateHandler(&nodeInf)
 	return nodeInf
@@ -497,7 +496,7 @@ func (ctlr *Controller) newNamespacedCommonResourceInformer(
 		options.LabelSelector = ""
 	}
 	resyncPeriod := 0 * time.Second
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig(clusterName)
+	clusterConfig := ctlr.multiClusterHandler.getClusterConfig(clusterName)
 	restClientv1 := clusterConfig.kubeClient.CoreV1().RESTClient()
 	crOptions := func(options *metav1.ListOptions) {
 		options.LabelSelector = clusterConfig.customResourceSelector.String()
@@ -733,76 +732,6 @@ func (ctlr *Controller) addNativeResourceEventHandlers(nrInf *NRInformer) {
 	}
 }
 
-func (ctlr *Controller) getEventHandlerForIPAM() *cache.ResourceEventHandlerFuncs {
-	return &cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { ctlr.enqueueIPAM(obj) },
-		UpdateFunc: func(oldObj, newObj interface{}) { ctlr.enqueueUpdatedIPAM(oldObj, newObj) },
-		DeleteFunc: func(obj interface{}) { ctlr.enqueueDeletedIPAM(obj) },
-	}
-}
-
-func (ctlr *Controller) enqueueIPAM(obj interface{}) {
-	ipamObj := obj.(*ficV1.IPAM)
-
-	if ipamObj.Namespace+"/"+ipamObj.Name != ctlr.ipamCR {
-		return
-	}
-
-	log.Debugf("Enqueueing IPAM: %v", ipamObj)
-	key := &rqKey{
-		namespace: ipamObj.ObjectMeta.Namespace,
-		kind:      IPAM,
-		rscName:   ipamObj.ObjectMeta.Name,
-		rsc:       obj,
-		event:     Create,
-	}
-
-	ctlr.resourceQueue.Add(key)
-}
-
-func (ctlr *Controller) enqueueUpdatedIPAM(oldObj, newObj interface{}) {
-	oldIpam := oldObj.(*ficV1.IPAM)
-	curIpam := newObj.(*ficV1.IPAM)
-
-	if curIpam.Namespace+"/"+curIpam.Name != ctlr.ipamCR {
-		return
-	}
-
-	if reflect.DeepEqual(oldIpam.Status, curIpam.Status) {
-		return
-	}
-
-	log.Debugf("Enqueueing Updated IPAM: %v", curIpam)
-	key := &rqKey{
-		namespace: curIpam.ObjectMeta.Namespace,
-		kind:      IPAM,
-		rscName:   curIpam.ObjectMeta.Name,
-		rsc:       newObj,
-		event:     Update,
-	}
-
-	ctlr.resourceQueue.Add(key)
-}
-
-func (ctlr *Controller) enqueueDeletedIPAM(obj interface{}) {
-	ipamObj := obj.(*ficV1.IPAM)
-
-	if ipamObj.Namespace+"/"+ipamObj.Name != ctlr.ipamCR {
-		return
-	}
-
-	log.Debugf("Enqueueing IPAM: %v", ipamObj)
-	key := &rqKey{
-		namespace: ipamObj.ObjectMeta.Namespace,
-		kind:      IPAM,
-		rscName:   ipamObj.ObjectMeta.Name,
-		rsc:       obj,
-		event:     Delete,
-	}
-
-	ctlr.resourceQueue.Add(key)
-}
-
 func (ctlr *Controller) enqueueVirtualServer(obj interface{}) {
 	vs := obj.(*cisapiv1.VirtualServer)
 	log.Debugf("Enqueueing VirtualServer: %v", vs)
@@ -814,7 +743,7 @@ func (ctlr *Controller) enqueueVirtualServer(obj interface{}) {
 		event:     Create,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueUpdatedVirtualServer(oldObj, newObj interface{}) {
@@ -851,7 +780,7 @@ func (ctlr *Controller) enqueueUpdatedVirtualServer(oldObj, newObj interface{}) 
 			event:     Delete,
 		}
 		updateEvent = false
-		ctlr.resourceQueue.Add(key)
+		ctlr.multiClusterHandler.resourceQueue.Add(key)
 	}
 
 	log.Debugf("Enqueueing VirtualServer: %v", newVS)
@@ -865,7 +794,7 @@ func (ctlr *Controller) enqueueUpdatedVirtualServer(oldObj, newObj interface{}) 
 	if updateEvent {
 		key.event = Update
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedVirtualServer(obj interface{}) {
@@ -879,7 +808,7 @@ func (ctlr *Controller) enqueueDeletedVirtualServer(obj interface{}) {
 		event:     Delete,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueTLSProfile(obj interface{}, event string) {
@@ -893,7 +822,7 @@ func (ctlr *Controller) enqueueTLSProfile(obj interface{}, event string) {
 		event:     event,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueTransportServer(obj interface{}) {
@@ -907,7 +836,7 @@ func (ctlr *Controller) enqueueTransportServer(obj interface{}) {
 		event:     Create,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueUpdatedTransportServer(oldObj, newObj interface{}) {
@@ -941,7 +870,7 @@ func (ctlr *Controller) enqueueUpdatedTransportServer(oldObj, newObj interface{}
 			rsc:       oldObj,
 			event:     Delete,
 		}
-		ctlr.resourceQueue.Add(key)
+		ctlr.multiClusterHandler.resourceQueue.Add(key)
 		updateEvent = false
 	}
 
@@ -956,7 +885,7 @@ func (ctlr *Controller) enqueueUpdatedTransportServer(oldObj, newObj interface{}
 	if updateEvent {
 		key.event = Update
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedTransportServer(obj interface{}) {
@@ -970,7 +899,7 @@ func (ctlr *Controller) enqueueDeletedTransportServer(obj interface{}) {
 		event:     Delete,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueuePolicy(obj interface{}, event string, clusterName string) {
@@ -985,7 +914,7 @@ func (ctlr *Controller) enqueuePolicy(obj interface{}, event string, clusterName
 		clusterName: clusterName,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedPolicy(obj interface{}, clusterName string) {
@@ -1000,7 +929,7 @@ func (ctlr *Controller) enqueueDeletedPolicy(obj interface{}, clusterName string
 		clusterName: clusterName,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueIngressLink(obj interface{}) {
@@ -1014,7 +943,7 @@ func (ctlr *Controller) enqueueIngressLink(obj interface{}) {
 		event:     Create,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedIngressLink(obj interface{}) {
@@ -1028,7 +957,7 @@ func (ctlr *Controller) enqueueDeletedIngressLink(obj interface{}) {
 		event:     Delete,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueUpdatedIngressLink(oldObj, newObj interface{}) {
@@ -1055,7 +984,7 @@ func (ctlr *Controller) enqueueUpdatedIngressLink(oldObj, newObj interface{}) {
 			event:     Delete,
 		}
 
-		ctlr.resourceQueue.Add(key)
+		ctlr.multiClusterHandler.resourceQueue.Add(key)
 	}
 
 	log.Debugf("Enqueueing IngressLink: %v on Update", newIngLink)
@@ -1067,7 +996,7 @@ func (ctlr *Controller) enqueueUpdatedIngressLink(oldObj, newObj interface{}) {
 		event:     Create,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueExternalDNS(obj interface{}) {
@@ -1081,7 +1010,7 @@ func (ctlr *Controller) enqueueExternalDNS(obj interface{}) {
 		event:     Create,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueUpdatedExternalDNS(oldObj, newObj interface{}) {
@@ -1097,7 +1026,7 @@ func (ctlr *Controller) enqueueUpdatedExternalDNS(oldObj, newObj interface{}) {
 			event:     Delete,
 		}
 
-		ctlr.resourceQueue.Add(key)
+		ctlr.multiClusterHandler.resourceQueue.Add(key)
 	}
 
 	log.Debugf("Enqueueing Updated ExternalDNS: %v", edns)
@@ -1109,7 +1038,7 @@ func (ctlr *Controller) enqueueUpdatedExternalDNS(oldObj, newObj interface{}) {
 		event:     Create,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedExternalDNS(obj interface{}) {
@@ -1123,7 +1052,7 @@ func (ctlr *Controller) enqueueDeletedExternalDNS(obj interface{}) {
 		event:     Delete,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueService(obj interface{}, clusterName string) {
@@ -1146,7 +1075,7 @@ func (ctlr *Controller) enqueueService(obj interface{}, clusterName string) {
 		event:       Create,
 		clusterName: clusterName,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func getClusterLog(clusterName string) string {
@@ -1186,7 +1115,7 @@ func (ctlr *Controller) enqueueUpdatedService(obj, cur interface{}, clusterName 
 			event:       Delete,
 			clusterName: clusterName,
 		}
-		ctlr.resourceQueue.Add(key)
+		ctlr.multiClusterHandler.resourceQueue.Add(key)
 	}
 
 	log.Debugf("Enqueueing Updated Service: %v %v", curSvc, getClusterLog(clusterName))
@@ -1201,7 +1130,7 @@ func (ctlr *Controller) enqueueUpdatedService(obj, cur interface{}, clusterName 
 	if !reflect.DeepEqual(svc.Spec.Ports, curSvc.Spec.Ports) {
 		key.svcPortUpdated = true
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedService(obj interface{}, clusterName string) {
@@ -1224,7 +1153,7 @@ func (ctlr *Controller) enqueueDeletedService(obj interface{}, clusterName strin
 		event:       Delete,
 		clusterName: clusterName,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueEndpoints(obj interface{}, event string, clusterName string) {
@@ -1247,7 +1176,7 @@ func (ctlr *Controller) enqueueEndpoints(obj interface{}, event string, clusterN
 		event:       event,
 		clusterName: clusterName,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueSecret(obj interface{}, event string) {
@@ -1260,7 +1189,7 @@ func (ctlr *Controller) enqueueSecret(obj interface{}, event string) {
 		rsc:       obj,
 		event:     event,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 
 }
 
@@ -1274,7 +1203,7 @@ func (ctlr *Controller) enqueueRoute(obj interface{}, event string) {
 		rsc:       obj,
 		event:     event,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueUpdatedRoute(old, cur interface{}) {
@@ -1292,7 +1221,7 @@ func (ctlr *Controller) enqueueUpdatedRoute(old, cur interface{}) {
 		event:     Update,
 		rsc:       cur,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueConfigmap(obj interface{}, event string) {
@@ -1313,7 +1242,7 @@ func (ctlr *Controller) enqueueConfigmap(obj interface{}, event string) {
 		rsc:       obj,
 		event:     event,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedConfigmap(obj interface{}) {
@@ -1327,7 +1256,7 @@ func (ctlr *Controller) enqueueDeletedConfigmap(obj interface{}) {
 		rsc:       obj,
 		event:     Delete,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedRoute(obj interface{}) {
@@ -1341,7 +1270,7 @@ func (ctlr *Controller) enqueueDeletedRoute(obj interface{}) {
 		rsc:       obj,
 		event:     Delete,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueuePod(obj interface{}, clusterName string) {
@@ -1359,7 +1288,7 @@ func (ctlr *Controller) enqueuePod(obj interface{}, clusterName string) {
 		clusterName: clusterName,
 	}
 
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) enqueueDeletedPod(obj interface{}, clusterName string) {
@@ -1393,7 +1322,7 @@ func (ctlr *Controller) enqueueDeletedPod(obj interface{}, clusterName string) {
 		event:       Delete,
 		clusterName: clusterName,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (nsInfr *NSInformer) start() {
@@ -1431,79 +1360,6 @@ func (nodeInfr *NodeInformer) stop() {
 	close(nodeInfr.stopCh)
 }
 
-func (ctlr *Controller) createNamespaceLabeledInformerForCluster(label string, clusterName string) error {
-	selector, err := createLabelSelector(label)
-	if err != nil {
-		return fmt.Errorf("unable to setup namespace-label informer for label: %v, Error:%v", label, err)
-	}
-	namespaceOptions := func(options *metav1.ListOptions) {
-		options.LabelSelector = selector.String()
-	}
-
-	clusterConfig := ctlr.multiClusterConfigs.getClusterConfig(clusterName)
-	if clusterConfig == nil {
-		return fmt.Errorf("no cluster config found in cache")
-	}
-	if clusterConfig != nil && clusterConfig.InformerStore != nil && 0 != len(clusterConfig.InformerStore.crInformers) {
-		return fmt.Errorf("cannot set a namespace label informer when informers " +
-			"have been setup for one or more namespaces")
-	}
-
-	resyncPeriod := 0 * time.Second
-	restClient := ctlr.multiClusterConfigs.getClusterConfig(clusterName)
-	restClientv1 := restClient.kubeClient.CoreV1().RESTClient()
-	clusterConfig.InformerStore.nsInformers[label] = &NSInformer{
-		stopCh: make(chan struct{}),
-		nsInformer: cache.NewSharedIndexInformer(
-			cache.NewFilteredListWatchFromClient(
-				restClientv1,
-				"namespaces",
-				"",
-				namespaceOptions,
-			),
-			&corev1.Namespace{},
-			resyncPeriod,
-			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
-		),
-	}
-
-	clusterConfig.InformerStore.nsInformers[label].nsInformer.AddEventHandlerWithResyncPeriod(
-		&cache.ResourceEventHandlerFuncs{
-			AddFunc:    func(obj interface{}) { ctlr.enqueueNamespace(obj) },
-			DeleteFunc: func(obj interface{}) { ctlr.enqueueDeletedNamespace(obj) },
-		},
-		resyncPeriod,
-	)
-
-	return nil
-}
-
-func (ctlr *Controller) enqueueNamespace(obj interface{}) {
-	ns := obj.(*corev1.Namespace)
-	log.Debugf("Enqueueing Namespace: %v", ns)
-	key := &rqKey{
-		namespace: ns.ObjectMeta.Namespace,
-		kind:      Namespace,
-		rscName:   ns.ObjectMeta.Name,
-		rsc:       obj,
-		event:     Create,
-	}
-	ctlr.resourceQueue.Add(key)
-}
-
-func (ctlr *Controller) enqueueDeletedNamespace(obj interface{}) {
-	ns := obj.(*corev1.Namespace)
-	log.Debugf("Enqueueing Namespace: %v on Delete", ns)
-	key := &rqKey{
-		namespace: ns.ObjectMeta.Namespace,
-		kind:      Namespace,
-		rscName:   ns.ObjectMeta.Name,
-		rsc:       obj,
-		event:     Delete,
-	}
-	ctlr.resourceQueue.Add(key)
-}
-
 func (ctlr *Controller) checkCoreserviceLabels(labels map[string]string) bool {
 	for _, v := range labels {
 		if _, ok := K8SCoreServices[v]; ok {
@@ -1523,7 +1379,7 @@ func (ctlr *Controller) enqueuePrimaryClusterProbeEvent() {
 	key := &rqKey{
 		kind: HACIS,
 	}
-	ctlr.resourceQueue.Add(key)
+	ctlr.multiClusterHandler.resourceQueue.Add(key)
 }
 
 func (ctlr *Controller) getErrorHandlerFunc(rsType, clusterName string) func(r *cache.Reflector, err error) {

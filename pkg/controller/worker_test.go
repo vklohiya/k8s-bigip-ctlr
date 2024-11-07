@@ -12,18 +12,16 @@ import (
 	"sync"
 	"time"
 
+	ficV1 "github.com/F5Networks/f5-ipam-controller/pkg/ipamapis/apis/fic/v1"
+	"github.com/F5Networks/f5-ipam-controller/pkg/ipammachinery"
+	crdfake "github.com/F5Networks/k8s-bigip-ctlr/v2/config/client/clientset/versioned/fake"
+	cisinfv1 "github.com/F5Networks/k8s-bigip-ctlr/v2/config/client/informers/externalversions/cis/v1"
 	"github.com/F5Networks/k8s-bigip-ctlr/v2/pkg/clustermanager"
 	"github.com/F5Networks/k8s-bigip-ctlr/v2/pkg/resource"
 	"github.com/F5Networks/k8s-bigip-ctlr/v2/pkg/teem"
 	routeapi "github.com/openshift/api/route/v1"
 	fakeRouteClient "github.com/openshift/client-go/route/clientset/versioned/fake"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/client-go/util/workqueue"
-
-	ficV1 "github.com/F5Networks/f5-ipam-controller/pkg/ipamapis/apis/fic/v1"
-	"github.com/F5Networks/f5-ipam-controller/pkg/ipammachinery"
-	crdfake "github.com/F5Networks/k8s-bigip-ctlr/v2/config/client/clientset/versioned/fake"
-	cisinfv1 "github.com/F5Networks/k8s-bigip-ctlr/v2/config/client/informers/externalversions/cis/v1"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
@@ -43,7 +41,7 @@ var _ = Describe("Worker Tests", func() {
 
 	BeforeEach(func() {
 		mockCtlr = newMockController()
-		mockCtlr.multiClusterConfigs = NewClusterHandler()
+		mockCtlr.multiClusterHandler = NewClusterHandler(Params{})
 		svc1 = test.NewService(
 			"svc1",
 			"1",
@@ -94,17 +92,16 @@ var _ = Describe("Worker Tests", func() {
 				},
 			},
 		}
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""] = newClusterConfig()
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient = k8sfake.NewSimpleClientset(svc1)
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient = crdfake.NewSimpleClientset(vrt1)
+		mockCtlr.multiClusterHandler.ClusterConfigs[""] = newClusterConfig()
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].EventChan = mockCtlr.multiClusterHandler.EventChan
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient = k8sfake.NewSimpleClientset(svc1)
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient = crdfake.NewSimpleClientset(vrt1)
 		mockCtlr.mode = CustomResourceMode
 		mockCtlr.globalExtendedCMKey = "kube-system/global-cm"
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].InformerStore = initInformerStore()
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].customResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].InformerStore = initInformerStore()
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].customResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
 		_ = mockCtlr.addNamespacedInformers("default", false, "")
-		mockCtlr.resourceQueue = workqueue.NewNamedRateLimitingQueue(
-			workqueue.DefaultControllerRateLimiter(), "custom-resource-controller")
 		mockCtlr.TeemData = &teem.TeemsData{
 			ResourceType: teem.ResourceTypes{
 				VirtualServer: make(map[string]int),
@@ -113,22 +110,22 @@ var _ = Describe("Worker Tests", func() {
 		mockCtlr.requestQueue = &requestQueue{sync.Mutex{}, list.New()}
 		mockCtlr.resources = NewResourceStore()
 		mockCtlr.multiClusterResources = newMultiClusterResourceStore()
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers["default"].vsInformer = cisinfv1.NewFilteredVirtualServerInformer(
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient,
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers["default"].vsInformer = cisinfv1.NewFilteredVirtualServerInformer(
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient,
 			namespace,
 			0,
 			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 			func(options *metav1.ListOptions) {
-				options.LabelSelector = mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector.String()
+				options.LabelSelector = mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector.String()
 			},
 		)
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers["default"].ilInformer = cisinfv1.NewFilteredIngressLinkInformer(
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient,
+		mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers["default"].ilInformer = cisinfv1.NewFilteredIngressLinkInformer(
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient,
 			namespace,
 			0,
 			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 			func(options *metav1.ListOptions) {
-				options.LabelSelector = mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector.String()
+				options.LabelSelector = mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector.String()
 			},
 		)
 	})
@@ -204,23 +201,23 @@ var _ = Describe("Worker Tests", func() {
 					},
 				},
 			}
-			mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamClient = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
 		})
 
 		It("Create IPAM Custom Resource", func() {
-			err := mockCtlr.createIPAMResource(DefaultIPAMNamespace)
+			err := mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
 			Expect(err).To(BeNil(), "Failed to Create IPAM Custom Resource")
 		})
 
 		It("Get IPAM Resource", func() {
-			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
-			ipamCR := mockCtlr.getIPAMCR()
+			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
+			ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 			Expect(ipamCR).NotTo(BeNil(), "Failed to GET IPAM")
-			mockCtlr.ipamCR = mockCtlr.ipamCR + "invalid"
-			ipamCR = mockCtlr.getIPAMCR()
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamCR = mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamCR + "invalid"
+			ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 			Expect(ipamCR).To(BeNil(), "Failed to GET IPAM")
-			mockCtlr.ipamCR = mockCtlr.ipamCR + "/invalid"
-			ipamCR = mockCtlr.getIPAMCR()
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamCR = mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamCR + "/invalid"
+			ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 			Expect(ipamCR).To(BeNil(), "Failed to GET IPAM")
 		})
 
@@ -231,7 +228,7 @@ var _ = Describe("Worker Tests", func() {
 			testSpec["key"] = "ns/name"
 
 			for sp, val := range testSpec {
-				_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
+				_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
 				var key, host, errHint string
 				if sp == "host" {
 					host = val
@@ -246,7 +243,7 @@ var _ = Describe("Worker Tests", func() {
 				ip, status := mockCtlr.requestIP("test", host, key)
 				Expect(status).To(Equal(Requested), errHint+"Failed to Request IP")
 				Expect(ip).To(BeEmpty(), errHint+"IP available even before requesting")
-				ipamCR := mockCtlr.getIPAMCR()
+				ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(len(ipamCR.Spec.HostSpecs)).To(Equal(1), errHint+"Invalid number of Host Specs")
 				Expect(ipamCR.Spec.HostSpecs[0].IPAMLabel).To(Equal("test"), errHint+"IPAM Request Failed")
 				Expect(ipamCR.Spec.HostSpecs[0].Host).To(Equal(host), errHint+"IPAM Request Failed")
@@ -255,13 +252,13 @@ var _ = Describe("Worker Tests", func() {
 				ip, status = mockCtlr.requestIP("", host, key)
 				Expect(status).To(Equal(InvalidInput), errHint+"Failed to validate invalid input")
 				Expect(ip).To(BeEmpty(), errHint+"Failed to validate invalid input")
-				newIPAMCR := mockCtlr.getIPAMCR()
+				newIPAMCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(reflect.DeepEqual(ipamCR, newIPAMCR)).To(BeTrue(), errHint+"IPAM CR should not be updated")
 
 				ip, status = mockCtlr.requestIP("test", host, key)
 				Expect(status).To(Equal(Requested), errHint+"Wrong status")
 				Expect(ip).To(BeEmpty(), errHint+"Invalid IP")
-				newIPAMCR = mockCtlr.getIPAMCR()
+				newIPAMCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(reflect.DeepEqual(ipamCR, newIPAMCR)).To(BeTrue(), errHint+"IPAM CR should not be updated")
 
 				ipamCR.Status.IPStatus = []*ficV1.IPSpec{
@@ -272,11 +269,11 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 				ip, status = mockCtlr.requestIP("test", host, key)
 				Expect(ip).To(Equal("10.10.10.1"), errHint+"Invalid IP")
 				Expect(status).To(Equal(Allocated), "Failed to fetch Allocated IP")
-				ipamCR = mockCtlr.getIPAMCR()
+				ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(len(ipamCR.Spec.HostSpecs)).To(Equal(1), errHint+"Invalid number of Host Specs")
 				Expect(ipamCR.Spec.HostSpecs[0].IPAMLabel).To(Equal("test"), errHint+"IPAM Request Failed")
 				Expect(ipamCR.Spec.HostSpecs[0].Host).To(Equal(host), errHint+"IPAM Request Failed")
@@ -285,7 +282,7 @@ var _ = Describe("Worker Tests", func() {
 				ip, status = mockCtlr.requestIP("dev", host, key)
 				Expect(status).To(Equal(Requested), "Failed to Request IP")
 				Expect(ip).To(BeEmpty(), errHint+"Invalid IP")
-				ipamCR = mockCtlr.getIPAMCR()
+				ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				// TODO: The expected number of Specs is 1. After the bug gets fixed update this to 1 from 2.
 				Expect(len(ipamCR.Spec.HostSpecs)).To(Equal(2), errHint+"Invalid number of Host Specs")
 				Expect(ipamCR.Spec.HostSpecs[0].Host).To(Equal(host), errHint+"IPAM Request Failed")
@@ -294,7 +291,7 @@ var _ = Describe("Worker Tests", func() {
 				ip, status = mockCtlr.requestIP("test", "", "")
 				Expect(status).To(Equal(InvalidInput), errHint+"Failed to validate invalid input")
 				Expect(ip).To(BeEmpty(), errHint+"Invalid IP")
-				newIPAMCR = mockCtlr.getIPAMCR()
+				newIPAMCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(reflect.DeepEqual(ipamCR, newIPAMCR)).To(BeTrue(), errHint+"IPAM CR should not be updated")
 
 				ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{}
@@ -306,7 +303,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 
 				ip, status = mockCtlr.requestIP("old", host, key)
 				Expect(ip).To(Equal(""), errHint+"Invalid IP")
@@ -320,7 +317,7 @@ var _ = Describe("Worker Tests", func() {
 			testSpec["key"] = "ns/name"
 
 			for sp, val := range testSpec {
-				_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
+				_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
 				var key, host, errHint string
 				if sp == "host" {
 					host = val
@@ -335,7 +332,7 @@ var _ = Describe("Worker Tests", func() {
 				ip := mockCtlr.releaseIP("", host, key)
 				Expect(ip).To(BeEmpty(), errHint+"Unexpected IP address released")
 
-				ipamCR := mockCtlr.getIPAMCR()
+				ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{
 					{
 						IPAMLabel: "test",
@@ -351,10 +348,10 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 
 				ip = mockCtlr.releaseIP("test", host, key)
-				ipamCR = mockCtlr.getIPAMCR()
+				ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(len(ipamCR.Spec.HostSpecs)).To(Equal(0), errHint+"IP Address Not released")
 				Expect(ip).To(Equal("10.10.10.1"), errHint+"Wrong IP Address released")
 
@@ -367,7 +364,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 				// Update status
 				ipamCR.Status.IPStatus = []*ficV1.IPSpec{
 					{
@@ -377,7 +374,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 
 				// VS
 				vs := test.NewVirtualServer(
@@ -391,9 +388,9 @@ var _ = Describe("Worker Tests", func() {
 				mockCtlr.addVirtualServer(vs)
 				ns := make(map[string]bool)
 				ns["default"] = true
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces = ns
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces = ns
 				ip = mockCtlr.releaseIP("test", host, key)
-				ipamCR = mockCtlr.getIPAMCR()
+				ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(len(ipamCR.Spec.HostSpecs)).NotTo(Equal(0), errHint+"IP Address Not released")
 				Expect(ip).To(Equal("10.10.10.1"), errHint+"Wrong IP Address released")
 
@@ -408,7 +405,7 @@ var _ = Describe("Worker Tests", func() {
 				)
 				mockCtlr.addTransportServer(ts)
 				ip = mockCtlr.releaseIP("test", host, key)
-				ipamCR = mockCtlr.getIPAMCR()
+				ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(len(ipamCR.Spec.HostSpecs)).NotTo(Equal(0), errHint+"IP Address Not released")
 				Expect(ip).To(Equal("10.10.10.1"), errHint+"Wrong IP Address released")
 
@@ -684,7 +681,7 @@ var _ = Describe("Worker Tests", func() {
 				vrt3.Spec.Host = "test3.com"
 				vrt2.Namespace = "default"
 				vrt3.Namespace = "default"
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces = map[string]bool{
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces = map[string]bool{
 					"default": true,
 				}
 				mockCtlr.addVirtualServer(vrt2)
@@ -713,7 +710,7 @@ var _ = Describe("Worker Tests", func() {
 				vrt3.Spec.HostGroup = "test"
 				vrt3.Spec.Host = "test3.com"
 				vrt3.Name = vrt2.Name
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces = map[string]bool{
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces = map[string]bool{
 					"default": true,
 					"foo":     true,
 				}
@@ -780,7 +777,7 @@ var _ = Describe("Worker Tests", func() {
 			})
 
 			It("IPAM Label", func() {
-				mockCtlr.ipamCli = &ipammachinery.IPAMClient{}
+				mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, &ipammachinery.IPAMClient{})
 				vrt2.Spec.IPAMLabel = "test"
 				vrt3.Spec.IPAMLabel = "test"
 				vrt4.Spec.IPAMLabel = "test"
@@ -794,7 +791,7 @@ var _ = Describe("Worker Tests", func() {
 			})
 
 			It("IPAM Label: Absence in a virtualServer", func() {
-				mockCtlr.ipamCli = &ipammachinery.IPAMClient{}
+				mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, &ipammachinery.IPAMClient{})
 				vrt2.Spec.IPAMLabel = "test"
 				vrt3.Spec.IPAMLabel = "test"
 				vrt4.Spec.IPAMLabel = ""
@@ -804,7 +801,7 @@ var _ = Describe("Worker Tests", func() {
 				Expect(len(virts)).To(Equal(0), "Wrong number of Virtual Servers")
 			})
 			It("IPAM Label in a virtualServer with empty host", func() {
-				mockCtlr.ipamCli = &ipammachinery.IPAMClient{}
+				mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, &ipammachinery.IPAMClient{})
 				vrt4.Spec.IPAMLabel = "test"
 				vrt4.Spec.Host = ""
 				virts := mockCtlr.getAssociatedVirtualServers(vrt4,
@@ -839,7 +836,7 @@ var _ = Describe("Worker Tests", func() {
 	})
 	Describe("Endpoints", func() {
 		BeforeEach(func() {
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].oldNodes = []Node{
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].oldNodes = []Node{
 				{
 					Name: "worker1",
 					Addr: "10.10.10.1",
@@ -908,8 +905,8 @@ var _ = Describe("Worker Tests", func() {
 				},
 			}
 			mockCtlr.Partition = "default"
-			mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamClient = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
 
 			svc1.Spec.Type = v1.ServiceTypeLoadBalancer
 
@@ -922,13 +919,13 @@ var _ = Describe("Worker Tests", func() {
 			svc1.Annotations = make(map[string]string)
 			svc1.Annotations[LBServiceIPAMLabelAnnotation] = "test"
 
-			svc1, _ = mockCtlr.Controller.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Services(svc1.ObjectMeta.Namespace).UpdateStatus(context.TODO(), svc1, metav1.UpdateOptions{})
+			svc1, _ = mockCtlr.Controller.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Services(svc1.ObjectMeta.Namespace).UpdateStatus(context.TODO(), svc1, metav1.UpdateOptions{})
 
 			_ = mockCtlr.processLBServices(svc1, false, "")
 			Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(0), "Resource Config should be empty")
 
-			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
-			ipamCR := mockCtlr.getIPAMCR()
+			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
+			ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 
 			ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{
 				{
@@ -946,7 +943,7 @@ var _ = Describe("Worker Tests", func() {
 					Key:       svc1.Namespace + "/" + svc1.Name + "_svc",
 				},
 			}
-			ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+			ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 
 			_ = mockCtlr.processLBServices(svc1, false, "")
 			Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(1), "Invalid Resource Configs")
@@ -976,8 +973,8 @@ var _ = Describe("Worker Tests", func() {
 				},
 			}
 			mockCtlr.Partition = "default"
-			mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamClient = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
 
 			svc1.Spec.Type = v1.ServiceTypeLoadBalancer
 
@@ -987,8 +984,8 @@ var _ = Describe("Worker Tests", func() {
 			svc1.Annotations = make(map[string]string)
 			svc1.Annotations[LBServiceIPAMLabelAnnotation] = "test"
 
-			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
-			ipamCR := mockCtlr.getIPAMCR()
+			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
+			ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 
 			ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{
 				{
@@ -1006,7 +1003,7 @@ var _ = Describe("Worker Tests", func() {
 					Key:       svc1.Namespace + "/" + svc1.Name + "_svc",
 				},
 			}
-			ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+			ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 
 			_ = mockCtlr.processLBServices(svc1, false, "")
 			Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(1), "Invalid Resource Configs")
@@ -1026,7 +1023,7 @@ var _ = Describe("Worker Tests", func() {
 
 			_ = mockCtlr.processLBServices(svc1, true, "")
 			delete(svc1.Annotations, LBServiceIPAnnotation)
-			ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+			ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 			_ = mockCtlr.processLBServices(svc1, false, "")
 			Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(1), "Invalid Resource Configs")
 			Expect(mockCtlr.resources.ltmConfig["default"].ResourceMap["vs_lb_svc_default_svc1_10_10_10_1_80"]).NotTo(BeNil(), "Invalid Resource Configs")
@@ -1035,7 +1032,7 @@ var _ = Describe("Worker Tests", func() {
 		It("Processing ServiceTypeLoadBalancer with partition annotation", func() {
 			// initialise mockCtlr
 			mockCtlr.Partition = "test"
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
 			mockCtlr.resources.Init()
 
 			// Create the serviceTypeLB resource
@@ -1136,13 +1133,13 @@ var _ = Describe("Worker Tests", func() {
 					Selector:             selctor,
 					IRules:               iRules,
 				})
-			_ = mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers["default"].ilInformer.GetIndexer().Add(IngressLink1)
+			_ = mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers["default"].ilInformer.GetIndexer().Add(IngressLink1)
 			mockCtlr.TeemData = &teem.TeemsData{
 				ResourceType: teem.ResourceTypes{
 					IngressLink: make(map[string]int),
 				},
 			}
-			_ = mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers["default"].svcInformer.GetIndexer().Add(foo)
+			_ = mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers["default"].svcInformer.GetIndexer().Add(foo)
 			err := mockCtlr.processIngressLink(IngressLink1, false)
 			Expect(err).To(BeNil(), "Failed to process IngressLink while creation")
 			Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(1), "Invalid LTM Config")
@@ -1191,7 +1188,7 @@ var _ = Describe("Worker Tests", func() {
 			ann := make(map[string]string)
 			ann[NPLSvcAnnotation] = "true"
 			nplsvc.Annotations = ann
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
 		})
 		It("NodePortLocal", func() {
 			pod1 := test.NewPod("pod1", namespace, 8080, selectors)
@@ -1258,7 +1255,7 @@ var _ = Describe("Worker Tests", func() {
 			Expect(mockCtlr.GetPodsForService("default", "svc", "", true)).To(BeNil())
 			pod1.Labels = labels
 			mockCtlr.addPod(pod1)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Pods("default").Create(context.TODO(), pod1, metav1.CreateOptions{})
 			Expect(mockCtlr.GetPodsForService("default", "svc", "", true)).ToNot(BeNil())
 			Expect(mockCtlr.GetService("test", "svc")).To(BeNil())
 			Expect(mockCtlr.GetService("default", "svc1")).To(BeNil())
@@ -1292,8 +1289,8 @@ var _ = Describe("Worker Tests", func() {
 					},
 				}
 				mockCtlr.Partition = namespace
-				mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamClient = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].eventNotifier = NewEventNotifier(nil)
 
 				svc1.Spec.Type = v1.ServiceTypeLoadBalancer
 
@@ -1308,11 +1305,11 @@ var _ = Describe("Worker Tests", func() {
 				svc1.Annotations[LBServiceIPAMLabelAnnotation] = "test"
 				svc1.Annotations[LBServicePolicyNameAnnotation] = "plc1"
 
-				svc1, _ = mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Services(svc1.ObjectMeta.Namespace).UpdateStatus(
+				svc1, _ = mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Services(svc1.ObjectMeta.Namespace).UpdateStatus(
 					context.TODO(), svc1, metav1.UpdateOptions{})
 
-				_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
-				ipamCR := mockCtlr.getIPAMCR()
+				_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
+				ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 
 				ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{
 					{
@@ -1330,23 +1327,23 @@ var _ = Describe("Worker Tests", func() {
 						Key:       svc1.Namespace + "/" + svc1.Name + "_svc",
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 
 				// Policy CRD not found
 				_ = mockCtlr.processLBServices(svc1, false, "")
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(0),
 					"Resource Config should be empty")
 
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers[namespace].plcInformer = cisinfv1.NewFilteredPolicyInformer(
-					mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient,
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers[namespace].plcInformer = cisinfv1.NewFilteredPolicyInformer(
+					mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient,
 					namespace,
 					0,
 					cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 					func(options *metav1.ListOptions) {
-						options.LabelSelector = mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector.String()
+						options.LabelSelector = mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector.String()
 					},
 				)
-				_ = mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers[namespace].plcInformer.GetStore().Add(plc)
+				_ = mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers[namespace].plcInformer.GetStore().Add(plc)
 
 				// Policy CRD exists
 				_ = mockCtlr.processLBServices(svc1, false, "")
@@ -1363,7 +1360,7 @@ var _ = Describe("Worker Tests", func() {
 
 				// SNAT set to SNAT pool name
 				plc.Spec.SNAT = "Common/test"
-				_ = mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers[namespace].plcInformer.GetStore().Update(plc)
+				_ = mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers[namespace].plcInformer.GetStore().Update(plc)
 				_ = mockCtlr.processLBServices(svc1, false, "")
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(1), "Invalid Resource Configs")
 				Expect(mockCtlr.resources.ltmConfig[namespace].ResourceMap[rsname].Virtual.SNAT).To(Equal(plc.Spec.SNAT),
@@ -1371,7 +1368,7 @@ var _ = Describe("Worker Tests", func() {
 
 				// SNAT set to none
 				plc.Spec.SNAT = "none"
-				_ = mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers[namespace].plcInformer.GetStore().Update(plc)
+				_ = mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers[namespace].plcInformer.GetStore().Update(plc)
 				_ = mockCtlr.processLBServices(svc1, false, "")
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(1), "Invalid Resource Configs")
 				Expect(mockCtlr.resources.ltmConfig[namespace].ResourceMap[rsname].Virtual.SNAT).To(Equal(plc.Spec.SNAT),
@@ -1591,17 +1588,16 @@ var _ = Describe("Worker Tests", func() {
 		var policy *cisapiv1.Policy
 		BeforeEach(func() {
 			mockCtlr.mode = CustomResourceMode
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""] = newClusterConfig()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces["default"] = true
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient = k8sfake.NewSimpleClientset()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient = crdfake.NewSimpleClientset()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].customResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].InformerStore = initInformerStore()
-			mockCtlr.resourceQueue = workqueue.NewNamedRateLimitingQueue(
-				workqueue.DefaultControllerRateLimiter(), "custom-resource-controller")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""] = newClusterConfig()
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].EventChan = mockCtlr.multiClusterHandler.EventChan
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces["default"] = true
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient = k8sfake.NewSimpleClientset()
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient = crdfake.NewSimpleClientset()
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].customResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].InformerStore = initInformerStore()
 			mockCtlr.resources = NewResourceStore()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
 
 			mockCtlr.TeemData = &teem.TeemsData{
 				ResourceType: teem.ResourceTypes{
@@ -1640,8 +1636,8 @@ var _ = Describe("Worker Tests", func() {
 			mockPM.firstPost = false
 			mockCtlr.Agent.PostManager = mockPM.PostManager
 
-			mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
-			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamClient = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
 
 			policy = &cisapiv1.Policy{
 				ObjectMeta: metav1.ObjectMeta{
@@ -1690,12 +1686,12 @@ var _ = Describe("Worker Tests", func() {
 			}
 		})
 		AfterEach(func() {
-			mockCtlr.resourceQueue.ShutDown()
+			mockCtlr.multiClusterHandler.resourceQueue.ShutDown()
 		})
 
 		Describe("Processing Virtual Server", func() {
 			AfterEach(func() {
-				mockCtlr.resourceQueue.ShutDown()
+				mockCtlr.multiClusterHandler.resourceQueue.ShutDown()
 			})
 
 			var vs *cisapiv1.VirtualServer
@@ -1818,7 +1814,7 @@ var _ = Describe("Worker Tests", func() {
 				mockCtlr.addService(svc)
 				mockCtlr.processResources()
 
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Services("default").Create(context.TODO(), svc, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Services("default").Create(context.TODO(), svc, metav1.CreateOptions{})
 				mockCtlr.setInitialResourceCount()
 				mockCtlr.migrateIPAM()
 
@@ -1843,7 +1839,7 @@ var _ = Describe("Worker Tests", func() {
 				mockCtlr.addSecret(secret)
 				mockCtlr.processResources()
 
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, metav1.CreateOptions{})
 				mockCtlr.addVirtualServer(vs)
 				mockCtlr.processResources()
 				// Should process VS now
@@ -1881,7 +1877,7 @@ var _ = Describe("Worker Tests", func() {
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(0), "Virtual Server not deleted")
 
 				vs.Spec.VirtualServerAddress = ""
-				mockCtlr.ipamCli = nil
+				mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, nil)
 				mockCtlr.addVirtualServer(vs)
 				mockCtlr.processResources()
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(0), "Invalid VS")
@@ -1925,10 +1921,11 @@ var _ = Describe("Worker Tests", func() {
 					"1",
 					labels,
 				)
-				mockCtlr.enqueueDeletedNamespace(ns)
+				go mockCtlr.multiClusterHandler.ClusterEventHandler()
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueDeletedNamespace(ns)
 				mockCtlr.processResources()
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(0), "Virtual Server not deleted")
-				_, ok := mockCtlr.multiClusterConfigs.ClusterConfigs[""].nsInformers[namespace]
+				_, ok := mockCtlr.multiClusterHandler.ClusterConfigs[""].nsInformers[namespace]
 				Expect(ok).To(Equal(false), "Namespace not deleted")
 
 				// verify HTTPTraffic is not set for insecure virtual server
@@ -2059,7 +2056,7 @@ var _ = Describe("Worker Tests", func() {
 
 				var key, host string
 
-				ipamCR := mockCtlr.getIPAMCR()
+				ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				host = "test.com"
 				key = "default/test.com_host"
 
@@ -2069,7 +2066,7 @@ var _ = Describe("Worker Tests", func() {
 						Host:      "test.com",
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 				newIpamCR := ipamCR.DeepCopy()
 
 				svc2 := svc.DeepCopy()
@@ -2091,9 +2088,9 @@ var _ = Describe("Worker Tests", func() {
 						Key:       "default/test1_svc",
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
-
-				mockCtlr.enqueueUpdatedIPAM(ipamCR, newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
+				go mockCtlr.multiClusterHandler.ClusterEventHandler()
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueUpdatedIPAM(ipamCR, newIpamCR)
 				mockCtlr.processResources()
 
 				_, status := mockCtlr.requestIP("test", host, key)
@@ -2132,7 +2129,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
 				ipamCR = newIpamCR.DeepCopy()
 
 				newIpamCR.Status.IPStatus = []*ficV1.IPSpec{
@@ -2143,9 +2140,9 @@ var _ = Describe("Worker Tests", func() {
 						Key: key,
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
 
-				mockCtlr.enqueueUpdatedIPAM(ipamCR, newIpamCR)
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueUpdatedIPAM(ipamCR, newIpamCR)
 				mockCtlr.processResources()
 
 				_, status = mockCtlr.requestIP("test", "", key)
@@ -2470,7 +2467,7 @@ var _ = Describe("Worker Tests", func() {
 				mockCtlr.processResources()
 				Expect(len(mockCtlr.resources.ltmConfig)).To(Equal(0), "Transport Server not deleted")
 
-				//mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+				// mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, ipammachinery.NewFakeIPAMClient(nil, nil, nil))
 				ts.Spec.VirtualServerAddress = ""
 				ts.Spec.IPAMLabel = "test"
 				mockCtlr.addTransportServer(ts)
@@ -2480,7 +2477,7 @@ var _ = Describe("Worker Tests", func() {
 
 				var key string
 
-				ipamCR := mockCtlr.getIPAMCR()
+				ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				key = "default/SampleTS_ts"
 
 				ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{
@@ -2489,7 +2486,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 				newIpamCR := ipamCR.DeepCopy()
 
 				newIpamCR.Status.IPStatus = []*ficV1.IPSpec{
@@ -2500,9 +2497,9 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
-
-				mockCtlr.enqueueUpdatedIPAM(ipamCR, newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
+				go mockCtlr.multiClusterHandler.ClusterEventHandler()
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueUpdatedIPAM(ipamCR, newIpamCR)
 				mockCtlr.processResources()
 
 				_, status := mockCtlr.requestIP("test", "", key)
@@ -2525,7 +2522,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
 				ipamCR = newIpamCR.DeepCopy()
 
 				newIpamCR.Status.IPStatus = []*ficV1.IPSpec{
@@ -2536,9 +2533,9 @@ var _ = Describe("Worker Tests", func() {
 						Key: key,
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
 
-				mockCtlr.enqueueUpdatedIPAM(ipamCR, newIpamCR)
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueUpdatedIPAM(ipamCR, newIpamCR)
 				mockCtlr.processResources()
 
 				_, status = mockCtlr.requestIP("test", "", key)
@@ -2546,9 +2543,9 @@ var _ = Describe("Worker Tests", func() {
 				mockCtlr.firstPostResponse = false
 				mockCtlr.removeUnusedIPAMEntries(TransportServer)
 				//check cache is not updated
-				ipamCR = mockCtlr.getIPAMCR()
+				ipamCR = mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				Expect(len(ipamCR.Status.IPStatus)).To(Equal(1), "IPAM cache not updated")
-				mockCtlr.ipamCli = nil
+				mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, nil)
 				mockCtlr.addTransportServer(ts)
 				mockCtlr.processResources()
 			})
@@ -2814,7 +2811,7 @@ var _ = Describe("Worker Tests", func() {
 					}
 				)
 
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Services("default").Create(context.TODO(), foo, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Services("default").Create(context.TODO(), foo, metav1.CreateOptions{})
 				mockCtlr.addService(foo)
 				mockCtlr.processResources()
 
@@ -2842,7 +2839,7 @@ var _ = Describe("Worker Tests", func() {
 				var key, host string
 				var status int
 
-				ipamCR := mockCtlr.getIPAMCR()
+				ipamCR := mockCtlr.multiClusterHandler.getIPAMCR(mockCtlr.LocalClusterName)
 				key = "default/ingresslink1_il"
 
 				ipamCR.Spec.HostSpecs = []*ficV1.HostSpec{
@@ -2851,7 +2848,7 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				ipamCR, _ = mockCtlr.ipamCli.Update(ipamCR)
+				ipamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(ipamCR)
 				newIpamCR := ipamCR.DeepCopy()
 
 				newIpamCR.Status.IPStatus = []*ficV1.IPSpec{
@@ -2861,9 +2858,9 @@ var _ = Describe("Worker Tests", func() {
 						Key:       key,
 					},
 				}
-				newIpamCR, _ = mockCtlr.ipamCli.Update(newIpamCR)
-
-				mockCtlr.enqueueUpdatedIPAM(ipamCR, newIpamCR)
+				newIpamCR, _ = mockCtlr.multiClusterHandler.getIPAMClient(mockCtlr.LocalClusterName).Update(newIpamCR)
+				go mockCtlr.multiClusterHandler.ClusterEventHandler()
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueUpdatedIPAM(ipamCR, newIpamCR)
 				mockCtlr.processResources()
 
 				_, status = mockCtlr.requestIP("test", host, key)
@@ -2880,19 +2877,19 @@ var _ = Describe("Worker Tests", func() {
 				Expect(len(ilList)).To(Equal(1))
 				ilList = mockCtlr.getAllIngressLinks("")
 				Expect(len(ilList)).To(Equal(0))
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers[""] = mockCtlr.newNamespacedCustomResourceInformerForCluster("", "")
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers[""].ilInformer.GetStore().Add(IngressLink1)
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers[""] = mockCtlr.newNamespacedCustomResourceInformerForCluster("", "")
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers[""].ilInformer.GetStore().Add(IngressLink1)
 				ilList = mockCtlr.getAllIngressLinks("")
 				Expect(len(ilList)).To(Equal(1))
 				ilList = mockCtlr.getAllIngLinkFromMonitoredNamespaces()
 				Expect(len(ilList)).To(Equal(1))
-				delete(mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers, "")
+				delete(mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers, "")
 				IngressLink1.Spec.IPAMLabel = ""
 				IngressLink1.Spec.VirtualServerAddress = ""
 				valid = mockCtlr.checkValidIngressLink(IngressLink1)
 				Expect(valid).To(BeFalse(), "Invalid IngressLink")
 
-				mockCtlr.ipamCli = nil
+				mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, nil)
 				IngressLink1.Spec.VirtualServerAddress = ""
 				valid = mockCtlr.checkValidIngressLink(IngressLink1)
 				Expect(valid).To(BeFalse(), "Invalid IngressLink")
@@ -2918,7 +2915,7 @@ var _ = Describe("Worker Tests", func() {
 					}
 				)
 
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Services("default").Create(context.TODO(), foo, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Services("default").Create(context.TODO(), foo, metav1.CreateOptions{})
 				mockCtlr.addService(foo)
 				mockCtlr.processResources()
 
@@ -3000,25 +2997,23 @@ var _ = Describe("Worker Tests", func() {
 		var mockPM *mockPostManager
 		BeforeEach(func() {
 			mockCtlr.mode = OpenShiftMode
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces = make(map[string]bool)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces = make(map[string]bool)
 			mockCtlr.globalExtendedCMKey = "kube-system/global-cm"
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].namespaces["default"] = true
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(), kubeCRClient: crdfake.NewSimpleClientset(), routeClientV1: fakeRouteClient.NewSimpleClientset().RouteV1()}
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].InformerStore = initInformerStore()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultNativeResourceLabel)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].namespaces["default"] = true
+			mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(), kubeCRClient: crdfake.NewSimpleClientset(), routeClientV1: fakeRouteClient.NewSimpleClientset().RouteV1()}
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].InformerStore = initInformerStore()
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultNativeResourceLabel)
 			mockCtlr.PoolMemberType = NodePortLocal
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].nrInformers["default"] = mockCtlr.newNamespacedNativeResourceInformer("default")
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].nrInformers["test"] = mockCtlr.newNamespacedNativeResourceInformer("test")
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers["test"] = mockCtlr.newNamespacedCommonResourceInformer("test", "")
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].nrInformers["system"] = mockCtlr.newNamespacedNativeResourceInformer("system")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].nrInformers["default"] = mockCtlr.newNamespacedNativeResourceInformer("default")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].nrInformers["test"] = mockCtlr.newNamespacedNativeResourceInformer("test")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers["test"] = mockCtlr.newNamespacedCommonResourceInformer("test", "")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].nrInformers["system"] = mockCtlr.newNamespacedNativeResourceInformer("system")
 			var processedHostPath ProcessedHostPath
 			processedHostPath.processedHostPathMap = make(map[string]metav1.Time)
 			mockCtlr.processedHostPath = &processedHostPath
-			mockCtlr.resourceQueue = workqueue.NewNamedRateLimitingQueue(
-				workqueue.DefaultControllerRateLimiter(), "custom-resource-controller")
 			mockCtlr.resources = NewResourceStore()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers["default"] = mockCtlr.newNamespacedCommonResourceInformer("default", "")
 
 			mockCtlr.TeemData = &teem.TeemsData{
 				ResourceType: teem.ResourceTypes{
@@ -3056,8 +3051,8 @@ var _ = Describe("Worker Tests", func() {
 			mockPM.firstPost = false
 			mockCtlr.Agent.PostManager = mockPM.PostManager
 
-			mockCtlr.ipamCli = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
-			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].ipamClient = ipammachinery.NewFakeIPAMClient(nil, nil, nil)
+			_ = mockCtlr.createIPAMResource(DefaultIPAMNamespace, mockCtlr.multiClusterHandler.ClusterConfigs[""])
 
 		})
 		AfterEach(func() {
@@ -3296,7 +3291,7 @@ extendedRouteSpec:
 				cmName := "escm"
 				cmNamespace := "system"
 				mockCtlr.globalExtendedCMKey = cmNamespace + "/" + cmName
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers[cmNamespace] = mockCtlr.newNamespacedCommonResourceInformer(cmNamespace, "")
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers[cmNamespace] = mockCtlr.newNamespacedCommonResourceInformer(cmNamespace, "")
 				mockCtlr.resources = NewResourceStore()
 				data := make(map[string]string)
 				cm = test.NewConfigMap(
@@ -3619,7 +3614,6 @@ extendedRouteSpec:
 			})
 
 			It("Process Re-encrypt Route", func() {
-
 				mockCtlr.resources.invertedNamespaceLabelMap[namespace] = routeGroup
 
 				mockCtlr.addConfigMap(cm)
@@ -3753,8 +3747,8 @@ extendedRouteSpec:
 
 				// Remove health Annotation - This won't work because current we are querying the pods from the kube client instead of informers
 				delete(route1.Annotations, resource.HealthMonitorAnnotation)
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Services(svc.ObjectMeta.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Pods(svc.ObjectMeta.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Services(svc.ObjectMeta.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Pods(svc.ObjectMeta.Namespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 				mockCtlr.addRoute(route1)
 				mockCtlr.resources.invertedNamespaceLabelMap[routeGroup] = routeGroup
 				mockCtlr.processResources()
@@ -3763,7 +3757,7 @@ extendedRouteSpec:
 				mockCtlr.processResources()
 
 				pod.Spec.Containers[0].ReadinessProbe.TimeoutSeconds = 1
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Pods(svc.ObjectMeta.Namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Pods(svc.ObjectMeta.Namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 				mockCtlr.addEndpoints(fooEndpts)
 				mockCtlr.processResources()
 
@@ -3781,7 +3775,7 @@ extendedRouteSpec:
 						},
 					},
 				}
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeClient.CoreV1().Pods(svc.ObjectMeta.Namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeClient.CoreV1().Pods(svc.ObjectMeta.Namespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 				mockCtlr.addEndpoints(fooEndpts)
 				mockCtlr.processResources()
 
@@ -3800,10 +3794,12 @@ extendedRouteSpec:
 					"1",
 					labels,
 				)
-				mockCtlr.enqueueDeletedNamespace(ns)
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].EventChan = mockCtlr.multiClusterHandler.EventChan
+				go mockCtlr.multiClusterHandler.ClusterEventHandler()
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].enqueueDeletedNamespace(ns)
 				mockCtlr.processResources()
 
-				_, ok = mockCtlr.multiClusterConfigs.ClusterConfigs[""].nsInformers[namespace]
+				_, ok = mockCtlr.multiClusterHandler.ClusterConfigs[""].nsInformers[namespace]
 				Expect(ok).To(Equal(false), "Namespace not deleted")
 
 				// mockCtlr.Agent.retryFailedTenant()
@@ -3858,7 +3854,7 @@ extendedRouteSpec:
 				mockCtlr.resources.invertedNamespaceLabelMap[namespace] = routeGroup
 				mockCtlr.addConfigMap(cm)
 				mockCtlr.processResources()
-				//mockCtlr.resourceQueue.Get()
+				//mockCtlr.multiClusterHandler.resourceQueue.Get()
 				routeGroup := "default"
 
 				mockCtlr.initState = false
@@ -3910,7 +3906,7 @@ extendedRouteSpec:
 					make(map[string]tenantResponse),
 				}
 
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].routeClientV1.Routes("default").Create(context.TODO(), route1, metav1.CreateOptions{})
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].routeClientV1.Routes("default").Create(context.TODO(), route1, metav1.CreateOptions{})
 
 				//	This will fail the TC because we are updating route status
 				time.Sleep(10 * time.Millisecond)
@@ -3935,8 +3931,8 @@ extendedRouteSpec:
 	Describe("Processing VS, TS, IL, SvcLB on pod update", func() {
 		BeforeEach(func() {
 			mockCtlr = newMockController()
-			mockCtlr.multiClusterConfigs = NewClusterHandler()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{InformerStore: initInformerStore()}
+			mockCtlr.multiClusterHandler = NewClusterHandler(Params{})
+			mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{InformerStore: initInformerStore()}
 			mockCtlr.Partition = "test"
 			mockCtlr.Agent = &Agent{
 				respChan: make(chan resourceStatusMeta, 1),
@@ -3949,17 +3945,15 @@ extendedRouteSpec:
 					},
 				},
 			}
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{
+			mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{
 				kubeClient:    k8sfake.NewSimpleClientset(),
 				kubeCRClient:  crdfake.NewSimpleClientset(),
 				InformerStore: initInformerStore(),
 			}
 			mockCtlr.mode = CustomResourceMode
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].customResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].customResourceSelector, _ = createLabelSelector(DefaultCustomResourceLabel)
 			_ = mockCtlr.addNamespacedInformers("default", false, "")
-			mockCtlr.resourceQueue = workqueue.NewNamedRateLimitingQueue(
-				workqueue.DefaultControllerRateLimiter(), "custom-resource-controller")
 			mockCtlr.TeemData = &teem.TeemsData{
 				ResourceType: teem.ResourceTypes{
 					VirtualServer:   make(map[string]int),
@@ -3969,32 +3963,32 @@ extendedRouteSpec:
 			}
 			mockCtlr.requestQueue = &requestQueue{sync.Mutex{}, list.New()}
 			mockCtlr.resources = NewResourceStore()
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers["default"].vsInformer = cisinfv1.NewFilteredVirtualServerInformer(
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient,
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers["default"].vsInformer = cisinfv1.NewFilteredVirtualServerInformer(
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient,
 				namespace,
 				0,
 				cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 				func(options *metav1.ListOptions) {
-					options.LabelSelector = mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector.String()
+					options.LabelSelector = mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector.String()
 				},
 			)
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].crInformers["default"].ilInformer = cisinfv1.NewFilteredIngressLinkInformer(
-				mockCtlr.multiClusterConfigs.ClusterConfigs[""].kubeCRClient,
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].crInformers["default"].ilInformer = cisinfv1.NewFilteredIngressLinkInformer(
+				mockCtlr.multiClusterHandler.ClusterConfigs[""].kubeCRClient,
 				namespace,
 				0,
 				cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 				func(options *metav1.ListOptions) {
-					options.LabelSelector = mockCtlr.multiClusterConfigs.ClusterConfigs[""].nativeResourceSelector.String()
+					options.LabelSelector = mockCtlr.multiClusterHandler.ClusterConfigs[""].nativeResourceSelector.String()
 				},
 			)
 		})
 		It("Virtual Server processing on pod update", func() {
 			mockCtlr.PoolMemberType = NodePortLocal
 			mockCtlr.multiClusterResources = newMultiClusterResourceStore()
-			mockCtlr.ipamCli = nil
+			mockCtlr.multiClusterHandler.setIPAMClient(mockCtlr.LocalClusterName, nil)
 			labels := make(map[string]string)
 			labels["app"] = "dev"
-			mockCtlr.multiClusterConfigs.ClusterConfigs[""].comInformers[namespace] = mockCtlr.newNamespacedCommonResourceInformer(namespace, "")
+			mockCtlr.multiClusterHandler.ClusterConfigs[""].comInformers[namespace] = mockCtlr.newNamespacedCommonResourceInformer(namespace, "")
 			fooPorts := []v1.ServicePort{
 				{
 					Port: 80,
@@ -4134,7 +4128,7 @@ extendedRouteSpec:
 	Describe("Verify helper functions", func() {
 		BeforeEach(func() {
 			mockCtlr = newMockController()
-			mockCtlr.multiClusterConfigs = NewClusterHandler()
+			mockCtlr.multiClusterHandler = NewClusterHandler(Params{})
 		})
 		It("Verify isAddingPoolRestricted is correctly checking whether to add pool or not", func() {
 			// Don't skip pool addition in non-multiCluster mode

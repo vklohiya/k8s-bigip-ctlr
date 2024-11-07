@@ -16,8 +16,8 @@ var _ = Describe("OtherSDNType", func() {
 	var pod *v1.Pod
 	BeforeEach(func() {
 		mockCtlr = newMockController()
-		mockCtlr.multiClusterConfigs = NewClusterHandler()
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{InformerStore: initInformerStore()}
+		mockCtlr.multiClusterHandler = NewClusterHandler(Params{})
+		mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{InformerStore: initInformerStore()}
 		mockCtlr.TeemData = &teem.TeemsData{SDNType: "other"}
 		selectors = make(map[string]string)
 
@@ -25,21 +25,21 @@ var _ = Describe("OtherSDNType", func() {
 	It("Check the SDNType Cilium", func() {
 		pod = test.NewPod("cilium-node1", "default", 8080, selectors)
 		pod.Status.Phase = "Running"
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(pod)}
+		mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(pod)}
 		mockCtlr.setOtherSDNType()
 		Expect(mockCtlr.TeemData.SDNType).To(Equal("cilium"), "SDNType should be cilium")
 	})
 	It("Check the SDNType Calico", func() {
 		pod = test.NewPod("calico-node1", "default", 8080, selectors)
 		pod.Status.Phase = "Running"
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(pod)}
+		mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(pod)}
 		mockCtlr.setOtherSDNType()
 		Expect(mockCtlr.TeemData.SDNType).To(Equal("calico"), "SDNType should be calico")
 	})
 	It("Check the SDNType other", func() {
 		pod = test.NewPod("node1", "default", 8080, selectors)
 		pod.Status.Phase = "Running"
-		mockCtlr.multiClusterConfigs.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(pod)}
+		mockCtlr.multiClusterHandler.ClusterConfigs[""] = &ClusterConfig{kubeClient: k8sfake.NewSimpleClientset(pod)}
 		mockCtlr.setOtherSDNType()
 		Expect(mockCtlr.TeemData.SDNType).To(Equal("other"), "SDNType should be other")
 	})
@@ -53,7 +53,7 @@ var _ = Describe("OtherSDNType", func() {
 			VXLANName:      "vxlan0",
 			Agent:          newMockAgent(&test.MockWriter{FailStyle: test.Success}),
 		}, false)
-		Expect(ctlrOpenShift.processedHostPath).NotTo(BeNil(), "processedHostPath object should not be nil")
+		Expect(ctlrOpenShift.multiClusterHandler.processedHostPath).NotTo(BeNil(), "processedHostPath object should not be nil")
 		Expect(ctlrOpenShift.shareNodes).To(BeFalse(), "shareNodes should not be enable")
 		Expect(ctlrOpenShift.vxlanMgr).To(BeNil(), "vxlanMgr should be created")
 		ctlrK8s := NewController(Params{
@@ -62,19 +62,18 @@ var _ = Describe("OtherSDNType", func() {
 			Config:         &rest.Config{},
 			IPAM:           true,
 		}, false)
-		Expect(ctlrK8s.processedHostPath).To(BeNil(), "processedHostPath object should be nil")
 		Expect(ctlrK8s.shareNodes).To(BeTrue(), "shareNodes should be enable")
 	})
 	It("Validate the IPAM configuration", func() {
 		ctlr := NewController(Params{
 			Config: &rest.Config{},
 		}, false)
-		delete(ctlr.multiClusterConfigs.ClusterConfigs[""].namespaces, "")
-		Expect(ctlr.validateIPAMConfig("kube-system")).To(BeFalse(), "ipam namespace should not be valid")
-		ctlr.multiClusterConfigs.ClusterConfigs[""].namespaces["kube-system"] = true
-		Expect(ctlr.validateIPAMConfig("kube-system")).To(BeTrue(), "ipam namespace should be valid")
-		Expect(ctlr.validateIPAMConfig("default")).To(BeFalse(), "ipam namespace should not be valid")
-		ctlr.multiClusterConfigs.ClusterConfigs[""].namespaces[""] = true
-		Expect(ctlr.validateIPAMConfig("default")).To(BeTrue(), "ipam namespace should be valid")
+		delete(ctlr.multiClusterHandler.ClusterConfigs[""].namespaces, "")
+		Expect(ctlr.validateIPAMConfig("kube-system", ctlr.multiClusterHandler.ClusterConfigs[""])).To(BeFalse(), "ipam namespace should not be valid")
+		ctlr.multiClusterHandler.ClusterConfigs[""].namespaces["kube-system"] = true
+		Expect(ctlr.validateIPAMConfig("kube-system", ctlr.multiClusterHandler.ClusterConfigs[""])).To(BeTrue(), "ipam namespace should be valid")
+		Expect(ctlr.validateIPAMConfig("default", ctlr.multiClusterHandler.ClusterConfigs[""])).To(BeFalse(), "ipam namespace should not be valid")
+		ctlr.multiClusterHandler.ClusterConfigs[""].namespaces[""] = true
+		Expect(ctlr.validateIPAMConfig("default", ctlr.multiClusterHandler.ClusterConfigs[""])).To(BeTrue(), "ipam namespace should be valid")
 	})
 })

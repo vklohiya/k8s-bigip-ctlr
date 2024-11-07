@@ -90,7 +90,7 @@ func (ctlr *Controller) responseHandler(respChan chan resourceStatusMeta) {
 								} else {
 									svcNamespace = virtual.Namespace
 								}
-								if !ctlr.isAddingPoolRestricted(ctlr.multiClusterConfigs.LocalClusterName) {
+								if !ctlr.isAddingPoolRestricted(ctlr.multiClusterHandler.LocalClusterName) {
 									svc := ctlr.GetService(svcNamespace, pool.Service)
 									if svc != nil {
 										ctlr.setLBServiceIngressStatus(svc, virtual.Status.VSAddress, "")
@@ -131,7 +131,7 @@ func (ctlr *Controller) responseHandler(respChan chan resourceStatusMeta) {
 							} else {
 								svcNamespace = virtual.Namespace
 							}
-							if !ctlr.isAddingPoolRestricted(ctlr.multiClusterConfigs.LocalClusterName) {
+							if !ctlr.isAddingPoolRestricted(ctlr.multiClusterHandler.LocalClusterName) {
 								// Don't update the service status if CIS running in default mode with
 								// multiClusterServices provided in the resource
 								if ctlr.discoveryMode == DefaultMode && len(virtual.Spec.Pool.MultiClusterServices) != 0 {
@@ -219,14 +219,14 @@ func (ctlr *Controller) dequeueReq(id int, failedTenantsLen int) requestMeta {
 
 func (ctlr *Controller) removeUnusedIPAMEntries(kind string) {
 	// Remove Unused IPAM entries in IPAM CR after CIS restarts, applicable to only first PostCall
-	if !ctlr.firstPostResponse && ctlr.ipamCli != nil && (kind == VirtualServer || kind == TransportServer) {
+	if !ctlr.firstPostResponse && ctlr.multiClusterHandler.getIPAMClient(ctlr.multiClusterHandler.LocalClusterName) != nil && (kind == VirtualServer || kind == TransportServer) {
 		ctlr.firstPostResponse = true
 		toRemoveIPAMEntries := &ficV1.IPAM{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels: make(map[string]string),
 			},
 		}
-		ipamCR := ctlr.getIPAMCR()
+		ipamCR := ctlr.multiClusterHandler.getIPAMCR(ctlr.LocalClusterName)
 		for _, hostSpec := range ipamCR.Spec.HostSpecs {
 			found := false
 			ctlr.cacheIPAMHostSpecs.Lock()
@@ -248,7 +248,7 @@ func (ctlr *Controller) removeUnusedIPAMEntries(kind string) {
 			}
 		}
 		for _, removeIPAMentry := range toRemoveIPAMEntries.Spec.HostSpecs {
-			ipamCR = ctlr.getIPAMCR()
+			ipamCR = ctlr.getIPAMCR(ctlr.LocalClusterName)
 			for index, hostSpec := range ipamCR.Spec.HostSpecs {
 				if (hostSpec.IPAMLabel == removeIPAMentry.IPAMLabel && hostSpec.Host == removeIPAMentry.Host) ||
 					(hostSpec.IPAMLabel == removeIPAMentry.IPAMLabel && hostSpec.Key == removeIPAMentry.Key) ||

@@ -56,7 +56,6 @@ type (
 		ciliumTunnelName            string
 		vxlanMgr                    *vxlan.VxlanMgr
 		initialResourceCount        int
-		resourceQueue               workqueue.RateLimitingInterface
 		Partition                   string
 		Agent                       *Agent
 		PoolMemberType              string
@@ -65,9 +64,7 @@ type (
 		firstPostResponse           bool
 		dgPath                      string
 		shareNodes                  bool
-		ipamCli                     *ipammachinery.IPAMClient
 		ipamClusterLabel            string
-		ipamCR                      string
 		defaultRouteDomain          int
 		TeemData                    *teem.TeemsData
 		requestQueue                *requestQueue
@@ -76,7 +73,7 @@ type (
 		OrchestrationCNI            string
 		StaticRouteNodeCIDR         string
 		cacheIPAMHostSpecs          CacheIPAM
-		multiClusterConfigs         *ClusterHandler
+		multiClusterHandler         *ClusterHandler
 		multiClusterResources       *MultiClusterResourceStore
 		multiClusterMode            string
 		loadBalancerClass           string
@@ -84,13 +81,7 @@ type (
 		discoveryMode               discoveryMode
 		clusterRatio                map[string]*int
 		clusterAdminState           map[string]clustermanager.AdminState
-		resourceContext
-	}
-	resourceContext struct {
-		resourceQueue       workqueue.RateLimitingInterface
-		globalExtendedCMKey string
-		namespaceLabelMode  bool
-		processedHostPath   *ProcessedHostPath
+		ClusterHandler
 	}
 
 	InformerStore struct {
@@ -105,14 +96,27 @@ type (
 		ClusterConfigs      map[string]*ClusterConfig
 		HAPairClusterName   string
 		LocalClusterName    string
-		uniqueAppIdentifier map[string]struct{}
-		eventQueue          workqueue.RateLimitingInterface
+		UniqueAppIdentifier map[string]struct{}
+		EventChan           chan *rqKey
+		NamespaceLabel      string
+		RouteLabel          string
+		NodeLabel           string
+		CustomResouceLabel  string
+		resourceQueue       workqueue.RateLimitingInterface
+		processedHostPath   *ProcessedHostPath
+		globalExtendedCMKey string
+		namespaceLabelMode  bool
 		sync.RWMutex
 	}
 
 	//ClusterConfig holds configuration specific for cluster
 	ClusterConfig struct {
+		EventChan              chan<- *rqKey
+		clusterName            string
 		clusterDetails         ClusterDetails
+		ipamClient             *ipammachinery.IPAMClient
+		ipamClusterLabel       string
+		ipamCR                 string
 		kubeClient             kubernetes.Interface
 		kubeCRClient           versioned.Interface
 		kubeAPIClient          *extClient.Clientset
@@ -153,6 +157,7 @@ type (
 		OrchestrationCNI            string
 		StaticRouteNodeCIDR         string
 		MultiClusterMode            string
+		LocalClusterName            string
 		LoadBalancerClass           string
 		ManageLoadBalancerClassOnly bool
 		IpamNamespace               string
