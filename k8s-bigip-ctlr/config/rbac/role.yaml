@@ -1,0 +1,47 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - cis.f5.com
+  resources:
+  - externaldns
+  - ingresslinks
+  - policies
+  - tlsprofiles
+  - transportservers
+  - virtualservers
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cis.f5.com
+  resources:
+  - externaldns/finalizers
+  - ingresslinks/finalizers
+  - policies/finalizers
+  - tlsprofiles/finalizers
+  - transportservers/finalizers
+  - virtualservers/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cis.f5.com
+  resources:
+  - externaldns/status
+  - ingresslinks/status
+  - policies/status
+  - tlsprofiles/status
+  - transportservers/status
+  - virtualservers/status
+  verbs:
+  - get
+  - patch
+  - update

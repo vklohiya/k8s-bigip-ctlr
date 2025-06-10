@@ -1,0 +1,9 @@
+apiVersion: cis.f5.com/v1
+kind: TLSProfile
+metadata:
+  labels:
+    app.kubernetes.io/name: k8s-bigip-ctlr
+    app.kubernetes.io/managed-by: kustomize
+  name: tlsprofile-sample
+spec:
+  # TODO(user): Add fields here

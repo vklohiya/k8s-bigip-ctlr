@@ -1,0 +1,9 @@
+## Append samples of your project ##
+resources:
+- cis_v1_virtualserver.yaml
+- cis_v1_tlsprofile.yaml
+- cis_v1_ingresslink.yaml
+- cis_v1_transportserver.yaml
+- cis_v1_externaldns.yaml
+- cis_v1_policy.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

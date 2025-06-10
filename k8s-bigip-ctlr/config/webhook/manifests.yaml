@@ -1,0 +1,252 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-cis-f5-com-v1-externaldns
+  failurePolicy: Fail
+  name: mexternaldns-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - externaldns
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-cis-f5-com-v1-ingresslink
+  failurePolicy: Fail
+  name: mingresslink-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ingresslinks
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-cis-f5-com-v1-policy
+  failurePolicy: Fail
+  name: mpolicy-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-cis-f5-com-v1-tlsprofile
+  failurePolicy: Fail
+  name: mtlsprofile-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - tlsprofiles
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-cis-f5-com-v1-transportserver
+  failurePolicy: Fail
+  name: mtransportserver-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - transportservers
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /mutate-cis-f5-com-v1-virtualserver
+  failurePolicy: Fail
+  name: mvirtualserver-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualservers
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-cis-f5-com-v1-externaldns
+  failurePolicy: Fail
+  name: vexternaldns-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - externaldns
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-cis-f5-com-v1-ingresslink
+  failurePolicy: Fail
+  name: vingresslink-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ingresslinks
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-cis-f5-com-v1-policy
+  failurePolicy: Fail
+  name: vpolicy-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - policies
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-cis-f5-com-v1-tlsprofile
+  failurePolicy: Fail
+  name: vtlsprofile-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - tlsprofiles
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-cis-f5-com-v1-transportserver
+  failurePolicy: Fail
+  name: vtransportserver-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - transportservers
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-cis-f5-com-v1-virtualserver
+  failurePolicy: Fail
+  name: vvirtualserver-v1.kb.io
+  rules:
+  - apiGroups:
+    - cis.f5.com
+    apiVersions:
+    - v1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - virtualservers
+  sideEffects: None
